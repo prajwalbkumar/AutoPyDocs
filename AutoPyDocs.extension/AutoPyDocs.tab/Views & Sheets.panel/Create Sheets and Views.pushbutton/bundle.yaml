@@ -1,0 +1,66 @@
+title: "Create Views & Sheets"
+
+# context:
+#   - Walls
+#   - Text Notes
+
+tooltip:   
+  en_us: >-
+    Version   =   0.0.1
+    
+    Date       =   21.10.2024
+
+    ________________________________________________________________
+    
+    
+    Description:
+
+
+    
+    This tool allows you to automate the creation of view templates and associated views in Revit based on data from an Excel file. 
+    It guides the user through selecting a discipline, title block family, and type, followed by processing Excel data to match view templates and levels. 
+    The tool creates missing view templates, suggests custom templates when necessary, and generates floor plan views on corresponding levels, places elevation and section on sheets.
+
+    ________________________________________________________________
+    
+    
+    How-To:
+
+      1. Select Discipline: Choose the relevant discipline for the sheets, like "Architecture" or "Interiors."
+
+      2. Select Title Block: Choose the family and type of title block to apply to each sheet.
+
+      3. Upload Excel File: Select an Excel file that contains sheet data. Columns should match the script's requirements for parameters like scale and template type.
+
+      4. Process Data: The script will read and process data from the Excel file, updating or creating templates as needed.
+
+      5. Create Sheets: Sheets with the specified title blocks are created based on the processed data.
+
+
+
+    Note: Ensure the Excel data is formatted correctly to avoid errors.
+
+        
+
+    ________________________________________________________________
+    
+    
+    Changelog:
+    
+    
+    - 
+
+    - [21.10.2024] v0.0.1 First Testing
+    
+    ________________________________________________________________
+
+highlight: new
+# highlight: updated
+
+help_url: "https://darcairo.sharepoint.com/sites/DARC/SitePages/Create-Floor-Plans.aspx"
+
+author: 
+  - Abhiram Nair
+# authors:
+#   - John Doe
+#   - Jane Doe

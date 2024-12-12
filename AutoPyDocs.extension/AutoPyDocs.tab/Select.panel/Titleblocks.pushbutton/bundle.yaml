@@ -1,0 +1,50 @@
+title: "Title Blocks"
+
+# context:
+#   - Walls
+#   - Text Notes
+
+tooltip:   
+  en_us: >-
+    Version   =   0.0.1
+    
+    Date       =   21.10.2024
+
+    ________________________________________________________________
+    
+    
+    Description:
+
+
+    Select multiple title blocks at once to update their parameters in bulk, saving time and ensuring consistency across sheets.
+
+    ________________________________________________________________
+    
+    
+    How-To:
+
+
+    1. Run the tool
+ 
+    ________________________________________________________________
+    
+    
+    Changelog:
+    
+    
+    - 
+
+    - [21.10.2024] v0.0.1 First Testing
+    
+    ________________________________________________________________
+
+highlight: new
+# highlight: updated
+
+# help_url: "https://dar-pune.gitbook.io/"
+
+author: 
+  - Abhiram Nair
+# authors:
+#   - John Doe
+#   - Jane Doe

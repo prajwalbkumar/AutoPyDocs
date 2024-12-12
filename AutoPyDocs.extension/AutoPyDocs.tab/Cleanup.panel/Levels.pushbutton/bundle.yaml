@@ -1,0 +1,54 @@
+title: "Align Levels"
+
+# context:
+#   - Walls
+#   - Text Notes
+
+tooltip:   
+  en_us: >-
+    Version   =   0.0.3
+    
+    Date       =   03.10.2024
+
+    ________________________________________________________________
+    
+    
+    
+    Tool Description:
+
+
+    This tool aligns levels to the visible cropped region or scope box as defined in the view, and flips the level bubbles to the standard side for consistency.
+
+    ________________________________________________________________
+    
+    How-To Guide:
+
+
+    1. You will be prompted to select the View Type to filter the corresponding views available on the sheet
+
+    2. Choose the views from the list provided for the specified view type.
+
+
+    Note: Only views placed on sheets will be available for selection.
+   
+    ________________________________________________________________
+    
+    
+    Changelog:
+    
+    - [13.09.2024] v0.0.3 Selection of Detail views on sheets added
+    - [13.09.2024] v0.0.2 Selection of views on sheets added
+    - [11.09.2024] v0.0.1 First Testing
+    
+    ________________________________________________________________
+
+# highlight: new
+# highlight: updated
+
+help_url: "https://darcairo.sharepoint.com/sites/DARC/SitePages/Align-Levels.aspx"
+
+author: 
+  - Abhiram Nair
+# authors:
+#   - John Doe
+#   - Jane Doe

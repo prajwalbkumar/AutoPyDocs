@@ -1,0 +1,59 @@
+title: "Center\n  Room Tags"
+
+# context:
+#   - Walls
+#   - Text Notes
+
+tooltip:   
+  en_us: >-
+    Version   =   0.0.1
+    
+    Date       =   07.10.2024
+
+    ________________________________________________________________
+    
+    
+    Tool Description:
+
+
+    This is a tool that Centers Room Tags on Floor Plans.
+
+    ________________________________________________________________
+    
+    
+    How-To Guide:
+    
+    Step 1: 
+    
+    Choose the view types where you want to center room tags, such as Floor Plans or Ceiling Plans.
+
+    Step 2: 
+
+    Pick the views placed on sheets where the room tags should be centered.
+
+    Step 3: 
+
+    Once the tool runs, it shows the total number of centered tags. A list of any skipped rooms (with reasons) is also displayed.
+
+
+    ________________________________________________________________
+    
+    
+    Changelog:
+    
+    
+    - [07.10.2024] v0.0.1 Selection of views on sheets added
+
+    
+    ________________________________________________________________
+
+# highlight: new
+highlight: updated
+
+help_url: "https://darcairo.sharepoint.com/sites/DARC/SitePages/Center-Room-Tags.aspx"
+
+author: 
+  - Abhiram Nair
+# authors:
+#   - John Doe
+#   - Jane Doe

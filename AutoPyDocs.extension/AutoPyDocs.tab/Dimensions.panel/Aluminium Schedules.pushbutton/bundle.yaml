@@ -1,0 +1,54 @@
+# General Guideline
+# Leave 2 line spaces after every section
+# Leave 1 Line Space after every line to display items in a new line
+
+title: "Aluminium\n 
+        Schedules"
+
+# context:
+#   - Walls
+#   - Text Notes
+
+tooltip:   
+  en_us: >-
+    Version   =   0.x.x
+    
+    Date       =   24.10.2024
+
+    ________________________________________________________________
+    
+    
+    Description:
+
+
+    Creates automatic dimensions for curtain walls in selected Aluminium Schedule Views.
+
+    ________________________________________________________________
+    
+    
+    How-To:
+
+
+    1. Go to an Alluminium Schedule View
+
+    2. Click on Dimension Schedules Button to Dimesnion them.
+
+    ________________________________________________________________
+    
+    
+    Changelog:
+    
+    
+    - [24.10.2024] v0.x.x Early Development
+    
+    ________________________________________________________________
+
+highlight: new
+# highlight: updated
+
+help_url: "https://darcairo.sharepoint.com/sites/DARC/SitePages/Dimension-Aluminium%20Schedules.aspx"
+author: Prajwal B Kumar
+
+# authors:
+#   - John Doe
+#   - Jane Doe

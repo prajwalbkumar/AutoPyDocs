@@ -1,0 +1,58 @@
+title: "Grids"
+
+# context:
+#   - Walls
+#   - Text Notes
+
+tooltip:   
+ en_us: >-
+    Version   =   0.0.4
+    
+    Date       =   10.10.2024
+
+    ________________________________________________________________
+        
+    Tool Description:
+
+
+    This tool streamlines grid alignment, flips grid bubbles to the standard side, and automatically generates linear dimensions for grids within selected views.
+
+    ________________________________________________________________
+        
+    How-To Guide:
+
+
+    1. Click the "Grids" button. You will be prompted to choose the View Type, which filters corresponding views on the sheet.
+
+    2. Choose the relevant views from the list of views displayed on the sheet for the specified view type.
+
+
+    Note: Only views already placed on sheets are included in the selection. Views not on sheets are excluded.
+
+    Delete existing grid dimensions for the selected views to avoid duplication.
+
+    ________________________________________________________________
+        
+    Changelog:
+    
+
+    - v0.0.4 [10.10.2024]  Element ownership filter added.
+    
+    - v0.0.3 [30.09.2024]  Integrated grid alignment and grid bubble flipping features into the script.
+
+    - v0.0.2 [13.09.2024]  Updated view scale relation and loop for selecting sheets.
+
+    - v0.0.1 [11.09.2024]  Initial testing phase.
+    
+    ________________________________________________________________
+
+# highlight: new
+highlight: updated
+
+help_url: "https://darcairo.sharepoint.com/sites/DARC/SitePages/Dimension-Grids.aspx"
+
+author: 
+  - Roma Ramnani
+# authors:
+#   - John Doe
+#   - Jane Doe
