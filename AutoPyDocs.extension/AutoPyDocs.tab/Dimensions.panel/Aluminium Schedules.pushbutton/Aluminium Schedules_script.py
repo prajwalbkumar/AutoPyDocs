@@ -40,6 +40,8 @@ header_data = " | ".join([
     datetime.now().strftime("%Y-%m-%d %H:%M:%S"), rvt_year, tool_name, model_name, user_name
 ])
 
+
+
 skipped_views = []
 view_types = {
     "Floor Plans": ViewType.FloorPlan,
@@ -123,34 +125,46 @@ if linked_instance:
         for link in linked_instance:
             link_name.append(link.Name)
 
-        link_name.append("No Link File")
         ar_instance_name = forms.SelectFromList.show(link_name, title = "Select AR Linked File", width=600, height=600, button_name="Select File", multiselect=False)
 
         if not ar_instance_name:
             script.exit()
 
-        if not ar_instance_name == "No Link File":
-            for link in linked_instance:
-                if ar_instance_name == link.Name:
-                    ar_instance = link
-                    break
 
-            ar_doc = ar_instance.GetLinkDocument()
-            if not ar_doc:
-                forms.alert("No instance found of the selected AR File.\n"
-                            "Use Manage Links to Load the Link in the File!", title = "Link Missing", warn_icon = True)
-                script.exit()
+        for link in linked_instance:
+            if ar_instance_name == link.Name:
+                ar_instance = link
+                break
 
-            walls_in_view = FilteredElementCollector(ar_doc).OfCategory(BuiltInCategory.OST_Walls).WhereElementIsNotElementType().ToElements()
-            views_in_link = FilteredElementCollector(ar_doc).OfCategory(BuiltInCategory.OST_Views).WhereElementIsNotElementType().ToElements()
+        ar_doc = ar_instance.GetLinkDocument()
+        if not ar_doc:
+            forms.alert("No instance found of the selected AR File.\n"
+                        "Use Manage Links to Load the Link in the File!", title = "Link Missing", warn_icon = True)
+            script.exit()
 
-            for link_view in views_in_link:
-                if link_view.Name == "3D-Navisworks-Export":
-                    geom_view = link_view
-                    break
+        walls_in_view = FilteredElementCollector(ar_doc).OfCategory(BuiltInCategory.OST_Walls).WhereElementIsNotElementType().ToElements()
+        views_in_link = FilteredElementCollector(ar_doc).OfCategory(BuiltInCategory.OST_Views).WhereElementIsNotElementType().ToElements()
+
+        for link_view in views_in_link:
+            if link_view.Name == "3D-Navisworks-Export":
+                geom_view = link_view
+                break
+    
+    else:
+        linked_instance = None
 
 
 equalize_option = forms.alert("Would you like to Equalize equalize dimensions", title="Equalize Dimensions", options= ["Yes", "No"])
+
+tag_type_list = FilteredElementCollector(doc).OfCategory(BuiltInCategory.OST_KeynoteTags).WhereElementIsElementType().ToElements()
+
+tag_type = {tag.LookupParameter("Type Name").AsString(): tag.Id for tag in tag_type_list}
+
+tag_type_name = forms.SelectFromList.show(tag_type.keys(), title="Select Tag Type", multiselect = False)
+
+if not tag_type_name:
+    script.exit()
+
 
 for view in selected_views:
     if not geom_view:
@@ -167,8 +181,17 @@ for view in selected_views:
             horizontal_grid = []
             vertical_point_list = []
             horizontal_point_list = []
-            try:
-                if wall.CurtainGrid:
+            # try:
+            if wall.CurtainGrid:
+                    
+                    panel_ids = wall.CurtainGrid.GetPanelIds()
+                    for id in panel_ids:
+                        panel = doc.GetElement(id)
+                        bb = panel.get_BoundingBox(doc.ActiveView);
+                        p1 = XYZ((bb.Min.X + bb.Max.X) / 2, (bb.Min.Y + bb.Max.Y) / 2, (bb.Min.Z + bb.Max.Z) / 2)
+                        IndependentTag.Create(doc, tag_type[tag_type_name], view.Id, Reference(panel), False, TagOrientation.Horizontal, p1)
+
+                    
                     wall_line = wall.Location.Curve
                     wall_start = wall_line.GetEndPoint(0)
                     wall_end = wall_line.GetEndPoint(1)
@@ -292,8 +315,8 @@ for view in selected_views:
                                 else:
                                     doc.Create.NewDimension(view, horizontal_line, vertical_array)
 
-            except:
-                continue
+            # except:
+            #     continue
 
     if view.ViewType == ViewType.FloorPlan:
         plan_minoroffset = - minoroffset
