@@ -289,7 +289,7 @@ try:
                                         grid_lines = grid.get_Geometry(options)
                                         for line in grid_lines:
                                             end_point = line.GetEndPoint(0)
-                                            if not (end_point.X + end_point.Y) in checkpoint:                                                
+                                            if not round(end_point.X, 4) + round(end_point.Y, 4) in checkpoint:                                                
                                                 if linked_instance:
                                                     internal_vertical_array.Append(line.Reference.CreateLinkReference(ar_instance))
                                                     vertical_array.Append(line.Reference.CreateLinkReference(ar_instance))
