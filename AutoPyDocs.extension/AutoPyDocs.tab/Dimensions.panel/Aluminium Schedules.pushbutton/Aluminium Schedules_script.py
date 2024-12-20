@@ -175,11 +175,23 @@ for view in selected_views:
 
     walls_in_view = [wall for wall in walls_in_view if wall.CurtainGrid]
 
-    wall_dict = {wall: abs((wall.Location.Curve.GetEndPoint(1) - wall.Location.Curve.GetEndPoint(0)).X + (wall.Location.Curve.GetEndPoint(1) - wall.Location.Curve.GetEndPoint(0)).Y) for wall in walls_in_view}
+    wall_dict = {}
+    for wall in walls_in_view:
+        wall_location_value = abs((wall.Location.Curve.GetEndPoint(1) - wall.Location.Curve.GetEndPoint(0)).X + (wall.Location.Curve.GetEndPoint(1) - wall.Location.Curve.GetEndPoint(0)).Y)
+        grid_location_value = 0
+        for line_id in wall.CurtainGrid.GetVGridLineIds():
+            line = ar_doc.GetElement(line_id)
+            line_curve_point = line.FullCurve.GetEndPoint(0)
+            grid_location_value += line_curve_point.X + line_curve_point.Y
+
+        wall_dict.update({wall: wall_location_value + grid_location_value})
+            
     unique_locations = set(wall_dict.values())
     stacked_walls = {}
     for location in unique_locations:
         stacked_walls[location] = [key for key in wall_dict.keys() if wall_dict[key] == location]
+    
+    print(stacked_walls)
 
         
     if view.ViewType == ViewType.Elevation:
@@ -256,8 +268,15 @@ for view in selected_views:
 
                 # Extract the top stacked curtain wall visbile in view
                 wall_location = abs((wall.Location.Curve.GetEndPoint(1) - wall.Location.Curve.GetEndPoint(0)).X + (wall.Location.Curve.GetEndPoint(1) - wall.Location.Curve.GetEndPoint(0)).Y)
-                if wall_location in stacked_walls:
-                    query_stacked_wall = stacked_walls[wall_location]
+                grid_location_value = 0
+                for line_id in wall.CurtainGrid.GetVGridLineIds():
+                    line = ar_doc.GetElement(line_id)
+                    line_curve_point = line.FullCurve.GetEndPoint(0)
+                    grid_location_value += line_curve_point.X + line_curve_point.Y
+                unique_identifier = wall_location + grid_location_value
+
+                if unique_identifier in stacked_walls:
+                    query_stacked_wall = stacked_walls[unique_identifier]
 
                     if len(query_stacked_wall) > 1:
                         top_wall_height = 0
@@ -275,7 +294,7 @@ for view in selected_views:
                         top_wall = wall
                     
                     # Once the topmost wall of a stack is retrieved, remove the stack from the dict all together
-                    stacked_walls.pop(wall_location)
+                    stacked_walls.pop(unique_identifier)
 
                 else:
                     continue
