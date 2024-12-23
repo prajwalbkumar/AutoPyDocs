@@ -1,0 +1,52 @@
+title: "Clear Annotations"
+
+# context:
+#   - Walls
+#   - Text Notes
+
+tooltip:   
+  en_us: >-
+    Version   =   0.0.3
+    
+    Date       =   03.10.2024
+
+    ________________________________________________________________
+    
+    
+    
+    Tool Description:
+
+
+    Deletes all annotations in the active view.
+
+    ________________________________________________________________
+    
+    How-To Guide:
+
+
+    1. Open a view.
+
+    2. Run the tool.
+
+
+    Note: This tool would delete ALL THE ANNOTATION ELEMENTS in the view.
+   
+    ________________________________________________________________
+    
+    
+    Changelog:
+    
+    - [12.12.2024] v0.0.1 First Testing
+    
+    ________________________________________________________________
+
+# highlight: new
+# highlight: updated
+
+help_url: "https://darcairo.sharepoint.com/sites/DARC/SitePages/Align-Levels.aspx"
+
+author: 
+  - Prajwal Kumar
+# authors:
+#   - John Doe
+#   - Jane Doe
