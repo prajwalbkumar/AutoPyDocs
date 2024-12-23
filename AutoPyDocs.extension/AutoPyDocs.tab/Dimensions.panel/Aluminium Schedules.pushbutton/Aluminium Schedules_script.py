@@ -171,11 +171,10 @@ for view in selected_views:
     if not walls_in_view:
         error_in_view = True
 
-    # Sort walls top to down
-
     walls_in_view = [wall for wall in walls_in_view if wall.CurtainGrid]
 
-    wall_dict = {}
+    # For Horizontal Dimension
+    vertical_wall_dict = {}
     for wall in walls_in_view:
         wall_location_value = abs((wall.Location.Curve.GetEndPoint(1) - wall.Location.Curve.GetEndPoint(0)).X + (wall.Location.Curve.GetEndPoint(1) - wall.Location.Curve.GetEndPoint(0)).Y)
         grid_location_value = 0
@@ -184,17 +183,32 @@ for view in selected_views:
             line_curve_point = line.FullCurve.GetEndPoint(0)
             grid_location_value += line_curve_point.X + line_curve_point.Y
 
-        wall_dict.update({wall: wall_location_value + grid_location_value})
+        vertical_wall_dict.update({wall: wall_location_value + grid_location_value})
             
-    unique_locations = set(wall_dict.values())
+    unique_locations = set(vertical_wall_dict.values())
     stacked_walls = {}
     for location in unique_locations:
-        stacked_walls[location] = [key for key in wall_dict.keys() if wall_dict[key] == location]
+        stacked_walls[location] = [key for key in vertical_wall_dict.keys() if vertical_wall_dict[key] == location]
     
-    print(stacked_walls)
+    # For Vertical Dimension
+    aligned_wall_dict = {}
+    for wall in walls_in_view:
+        wall_location_value = abs(wall.Location.Curve.GetEndPoint(1).Z) + wall.LookupParameter("Base Offset").AsDouble()
+        grid_location_value = 0
+        for line_id in wall.CurtainGrid.GetUGridLineIds():
+            line = ar_doc.GetElement(line_id)
+            line_curve_point = line.FullCurve.GetEndPoint(0)
+            grid_location_value += line_curve_point.Z
+        aligned_wall_dict.update({wall: wall_location_value + grid_location_value})
+
+    unique_locations = set(aligned_wall_dict.values())
+    aligned_walls = {}
+    for location in unique_locations:
+        aligned_walls[location] = [key for key in aligned_wall_dict.keys() if aligned_wall_dict[key] == location]
 
         
     if view.ViewType == ViewType.Elevation:
+
 
         for wall in walls_in_view:
             vertical_grid = []
@@ -207,7 +221,7 @@ for view in selected_views:
 
             angle_to_view = ((wall_start - wall_end).Normalize()).AngleTo(view.ViewDirection)
             rounded_result = round(angle_to_view, 4)
-            if rounded_result == 1.5708:
+            if rounded_result == 1.5708: # A constant value do not change
                    
                 # Extracting Physical Edges
                 options = Options()
@@ -223,7 +237,41 @@ for view in selected_views:
                 horizontal_array = ReferenceArray()
                 horizontal_overall_array = ReferenceArray()
 
-                for geometry in wall.get_Geometry(options):
+                # Extract the top stacked curtain wall visbile in view
+                wall_location = abs(wall.Location.Curve.GetEndPoint(1).Z) + wall.LookupParameter("Base Offset").AsDouble()
+                grid_location_value = 0
+                for line_id in wall.CurtainGrid.GetUGridLineIds():
+                    line = ar_doc.GetElement(line_id)
+                    line_curve_point = line.FullCurve.GetEndPoint(0)
+                    grid_location_value += line_curve_point.Z
+                unique_identifier = wall_location + grid_location_value
+
+                if unique_identifier in aligned_walls:
+                    query_aligned_walls = aligned_walls[unique_identifier]
+
+                    if len(query_aligned_walls) > 1:
+                        left_wall_point = 0
+                        left_wall = None
+
+                        for wall in query_aligned_walls:
+                            if wall not in walls_in_view:
+                                continue
+                            # Get the Left Most Wall
+                            current_wall_point = wall.Location.Curve.GetEndPoint(1).X + wall.Location.Curve.GetEndPoint(1).Y
+                            if  current_wall_point > left_wall_point:
+                                left_wall_point = current_wall_point
+                                left_wall = wall
+
+                    else:
+                        left_wall = wall
+                    
+                    # Once the topmost wall of a stack is retrieved, remove the stack from the dict all together
+                    aligned_walls.pop(unique_identifier)
+
+                else:
+                    continue
+
+                for geometry in left_wall.get_Geometry(options):
                     if (geometry.ToString() == "Autodesk.Revit.DB.Solid"):
                         faces = geometry.Faces
                         for face in faces:
@@ -239,6 +287,10 @@ for view in selected_views:
 
                 if horizontal_array:
                     # Vertical Dimensions
+                    wall_line = left_wall.Location.Curve
+                    wall_start = wall_line.GetEndPoint(0)
+                    wall_end = wall_line.GetEndPoint(1)
+
                     if wall_start.X + wall_start.Y < wall_end.X + wall_end.Y:
                         vertical_line = Line.CreateUnbound(wall_line.Evaluate((wall_line.Length + minoroffset), False), XYZ(0,0,1))
                         major_vertical_line = Line.CreateUnbound(wall_line.Evaluate((wall_line.Length + majoroffset), False), XYZ(0,0,1))
@@ -248,8 +300,8 @@ for view in selected_views:
 
                     doc.Create.NewDimension(view, major_vertical_line, horizontal_overall_array)
 
-                    if wall.CurtainGrid.NumULines > 0:
-                        horizontal_grid_ids = wall.CurtainGrid.GetUGridLineIds()
+                    if left_wall.CurtainGrid.NumULines > 0:
+                        horizontal_grid_ids = left_wall.CurtainGrid.GetUGridLineIds()
                         for id in horizontal_grid_ids:
                             grid = ar_doc.GetElement(id)
                             horizontal_grid.append(grid)
@@ -265,7 +317,10 @@ for view in selected_views:
                                     checkpoint.append(line.GetEndPoint(0).Z)
 
                         doc.Create.NewDimension(view, vertical_line, horizontal_array)
+                
 
+
+                # Horizontal Dimension Starts
                 # Extract the top stacked curtain wall visbile in view
                 wall_location = abs((wall.Location.Curve.GetEndPoint(1) - wall.Location.Curve.GetEndPoint(0)).X + (wall.Location.Curve.GetEndPoint(1) - wall.Location.Curve.GetEndPoint(0)).Y)
                 grid_location_value = 0
