@@ -6,20 +6,24 @@ __author__ = "prajwalbkumar, romaramnani"
 
 # Imports
 from Autodesk.Revit.DB import *
+#from Autodesk.Revit.DB import XYZ, Line, ViewType
 from Autodesk.Revit.UI import UIDocument
 from pyrevit import revit, forms, script
+
 import os
 import time
 from datetime           import datetime
-from Extract.RunData    import   get_run_data
+from Extract.RunData    import get_run_data
 from doc_functions      import get_view_on_sheets, filter_element_ownership
+from view_functions     import get_grids_in_view, ensure_view_is_cropped
+from g_curve_functions  import offset_line
+from dim_functions      import MultipleSlidersForm
 
 # Record the start time
 start_time = time.time()
 
 manual_time = 108.4 # Assuming for 10 grids in 1 view
 
-script_dir = os.path.dirname(__file__)
 ui_doc = __revit__.ActiveUIDocument
 doc = __revit__.ActiveUIDocument.Document # Get the Active Document
 app = __revit__.Application # Returns the Revit Application Object
@@ -37,29 +41,28 @@ view_types = {
 
 selected_views = get_view_on_sheets(doc, view_types)
 
-def get_grids_in_view(doc, view):
-    # Filter to collect grids in the specific view
-    grids_collector = FilteredElementCollector(doc, view.Id) \
-                      .OfCategory(BuiltInCategory.OST_Grids) \
-                      .WhereElementIsNotElementType()
+#Instantiate the form
+gaps = MultipleSlidersForm()
 
-    # Convert to a list and return the grids
-    grids_in_view = list(grids_collector)
+# Retrieve slider values
+extension_distance_1 = gaps.window.Sl_left.Value
+extension_distance_2 = gaps.window.Sl_right.Value
+extension_distance_3 = gaps.window.Sl_top.Value
+extension_distance_4 = gaps.window.Sl_bottom.Value
 
-    if doc.IsWorkshared:
-        owned_grids = filter_element_ownership(doc, grids_in_view)
-        return owned_grids
-    else: 
-        return grids_in_view 
+# print(gap_distance_1)
+# print(gap_distance_2)
+# print(gap_distance_3)
+# print(gap_distance_4)
     
 def new_point(exisiting_point, direction, bbox_curves, start_point = None):
-
-    projected_points = []
-    for curve in bbox_curves:
-        project = curve.Project(exisiting_point).XYZPoint
-        projected_points.append(XYZ(project.X, project.Y, 0))
-
     possible_points = []
+    projected_points = []
+
+    for curve in bbox_curves:
+        if isinstance(curve, Curve):
+            project = curve.Project(exisiting_point).XYZPoint
+            projected_points.append(XYZ(project.X, project.Y, 0))
 
     exisiting_point = XYZ(exisiting_point.X, exisiting_point.Y, 0)
 
@@ -77,7 +80,6 @@ def new_point(exisiting_point, direction, bbox_curves, start_point = None):
         else:
             if point.DistanceTo(possible_points[0]) > point.DistanceTo(possible_points[1]):
                 new_point = possible_points[0]
-                
             else:
                 new_point = possible_points[1]
     
@@ -95,15 +97,21 @@ try:
     view_list_length =0
 
     for view in selected_views:
-
+        #ensure_view_is_cropped(view)
         grids_collector = get_grids_in_view(doc, view)
+        s_factor = view.Scale
+
+        gap_distance_1 = extension_distance_1/3 * s_factor/100
+        gap_distance_2 = extension_distance_2/3 * s_factor/100
+        gap_distance_3 = extension_distance_3/3 * s_factor/100
+        gap_distance_4 = extension_distance_4/3 * s_factor/100
 
         bbox = view.CropBox
 
-        corner1 = XYZ(bbox.Min.X, bbox.Min.Y, bbox.Min.Z)
-        corner2 = XYZ(bbox.Max.X, bbox.Min.Y, bbox.Min.Z)
-        corner3 = XYZ(bbox.Max.X, bbox.Max.Y, bbox.Min.Z)
-        corner4 = XYZ(bbox.Min.X, bbox.Max.Y, bbox.Min.Z)
+        corner1 = XYZ(bbox.Min.X - gap_distance_1, bbox.Min.Y - gap_distance_4, bbox.Min.Z)
+        corner2 = XYZ(bbox.Max.X + gap_distance_2, bbox.Min.Y - gap_distance_4, bbox.Min.Z)
+        corner3 = XYZ(bbox.Max.X + gap_distance_2, bbox.Max.Y + gap_distance_3, bbox.Min.Z)
+        corner4 = XYZ(bbox.Min.X - gap_distance_1, bbox.Max.Y + gap_distance_3, bbox.Min.Z)
 
         # Create lines representing the bounding box edges
         line1 = Line.CreateBound(corner1, corner2)
@@ -113,7 +121,11 @@ try:
 
         # Create model curves in the active view
         bbox_curves = [line1, line2, line3, line4]
-        
+
+        # for line in bbox_curves:
+        #     doc.Create.NewDetailCurve(view, line)
+
+
         floor_plan_views = ["FloorPlan", "CeilingPlan", "EngineeringPlan", "AreaPlan"]
         front_views = ["Elevation", "Section"]
 
@@ -139,7 +151,7 @@ try:
                 start_point = grids_view_curve.GetEndPoint(0)
                 end_point = grids_view_curve.GetEndPoint(1)
                 direction = (end_point - start_point).Normalize()
-            
+
                 new_start_point = new_point(start_point, direction, bbox_curves)
                 new_end_point = new_point(end_point, direction, bbox_curves, new_start_point)
 
@@ -179,9 +191,9 @@ try:
             
             # Explode curve loop into individual lines
             for curve_loop in crop_region:
-                print(curve_loop)
+                #print(curve_loop)
                 for curve in curve_loop:
-                    print(curve)
+                    #print(curve)
                     # Get Z value of all end points
                     end_point_z.append(curve.GetEndPoint(0).Z)
 
@@ -207,8 +219,8 @@ try:
                 end_point     = curve.GetEndPoint(1)
 
                 # Modify the Z-values of the start and end points based on the crop region
-                start_point   = XYZ(start_point.X, start_point.Y, end_point_z[0])
-                end_point     = XYZ(end_point.X, end_point.Y, end_point_z[-1])
+                start_point   = XYZ(start_point.X, start_point.Y, end_point_z[0] - gap_distance_4)
+                end_point     = XYZ(end_point.X, end_point.Y, end_point_z[-1] + gap_distance_3)
 
                 # Create a new grid line with the updated start and end points
                 new_grid_line = Line.CreateBound(start_point, end_point)
@@ -225,6 +237,7 @@ try:
                 grid_list_length += 1
             total_grid_count += grid_list_length
 
+        ensure_view_is_cropped(view)
         view_list_length+= 1
     total_view_count += view_list_length
 

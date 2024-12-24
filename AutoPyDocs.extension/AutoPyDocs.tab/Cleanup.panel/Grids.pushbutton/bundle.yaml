@@ -6,9 +6,9 @@ title: "Align Grids"
 
 tooltip:   
   en_us: >-
-    Version   =   0.0.3
+    Version   =   1.0.0
     
-    Date       =   10.10.2024
+    Date       =   16.12.2024
 
     ________________________________________________________________
     
@@ -22,7 +22,7 @@ tooltip:
     How-To Guide:
 
 
-    1. You will be prompted to select the View Type to filter the corresponding views available on the sheet
+    1. You will be prompted to select the View Type to filter the corresponding views available on the sheet.
 
     2. Choose the views from the list provided for the specified view type.
 
@@ -33,7 +33,8 @@ tooltip:
     
     Changelog:
     
-    
+    - [16.12.2024] v1.0.0 Option to give distances from crop region added.
+
     - [10.10.2024] v0.0.3 Element ownership filter added.
     
     - [13.09.2024] v0.0.2 Added functionality for selecting views on sheets.
@@ -43,7 +44,7 @@ tooltip:
     ________________________________________________________________
 
 # highlight: new
-# highlight: updated
+highlight: updated
 
 help_url: "https://darcairo.sharepoint.com/sites/DARC/SitePages/Align-Grids.aspx"
 

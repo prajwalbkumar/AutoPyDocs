@@ -141,61 +141,84 @@ def get_rooms_from_linked_models(doc):
             )
     return linked_rooms
 
-def find_linked_room_for_tag(tag_location, linked_rooms):
+def find_linked_room_for_tag(tag_point, linked_room):
+    """
+    Checks if a tag point is inside a linked room boundary.
+    :param tag_point: The location of the room tag (XYZ).
+    :param linked_room: A room from the linked model.
+    :return: The room if the point is inside, None otherwise.
+    """
+    boundary_options = SpatialElementBoundaryOptions()
+    boundaries = linked_room.GetBoundarySegments(boundary_options)
 
-    linked_rooms = get_rooms_from_linked_models(doc) 
-    for linked_room in linked_rooms:
-        if linked_room.IsPointInRoom(tag_location):
-            return linked_room  # Return the first room that contains the point
-    return None  # Return None if no room found
+    if not boundaries:
+        return None  # Room has no boundary
+
+    room_boundary_points = []
+    for segment_list in boundaries:
+        for segment in segment_list:
+            curve = segment.GetCurve()
+            room_boundary_points.append(curve.GetEndPoint(0))
+
+    # Check if the tag point is inside the room boundary
+    return linked_room if is_point_inside_boundary(tag_point, room_boundary_points) else None
 
 
 
-t = Transaction(doc, "Place Room Tags")
-t.Start()
+def get_room_boundary_as_polygon(room):
+    """
+    Creates a polygon from the room boundary.
+    :param room: The room element (Architecture.Room).
+    :return: A list of closed boundary curve points.
+    """
+    boundary_options = SpatialElementBoundaryOptions()
+    boundary_segments = room.GetBoundarySegments(boundary_options)
+
+    if not boundary_segments:
+        return None  # Room has no boundary
+
+    boundary_points = []
+    for segment_list in boundary_segments:
+        for segment in segment_list:
+            curve = segment.GetCurve()
+            # Add the start points of the curve to define a closed boundary
+            boundary_points.append(curve.GetEndPoint(0))
+
+    # Ensure the boundary is closed by adding the first point at the end
+    if boundary_points[0] != boundary_points[-1]:
+        boundary_points.append(boundary_points[0])
+
+    return boundary_points
+
+
+def is_point_inside_boundary(point, boundary_points):
+    """
+    Checks if a point is inside a boundary defined by a list of XYZ points (polygon).
+    :param point: The point to check (XYZ).
+    :param boundary_points: List of boundary points (XYZ).
+    :return: True if the point is inside, False otherwise.
+    """
+    # Project points to 2D plane (XY) for boundary checks
+    px, py = point.X, point.Y
+    vertices = [(pt.X, pt.Y) for pt in boundary_points]
+
+    inside = False
+    n = len(vertices)
+    for i in range(n):
+        x1, y1 = vertices[i]
+        x2, y2 = vertices[(i + 1) % n]
+        if ((y1 > py) != (y2 > py)) and (px < (x2 - x1) * (py - y1) / (y2 - y1) + x1):
+            inside = not inside
+    return inside
+
+
+
+tg = TransactionGroup(doc, "Place Room Tags")
+tg.Start()
 
 
 ignored_rooms = []
-
-
 for view in selected_views:
-    # Collect all rooms visible in the active view from the current document
-    current_rooms = FilteredElementCollector(doc, view.Id).OfCategory(BuiltInCategory.OST_Rooms).WhereElementIsNotElementType().ToElements()
-
-    # Collect all rooms visible in the active view from linked models
-    linked_rooms = []
-    for link_instance in FilteredElementCollector(doc).OfClass(RevitLinkInstance):
-        link_doc = link_instance.GetLinkDocument()
-        if link_doc:
-            linked_rooms += FilteredElementCollector(link_doc, view.Id).OfCategory(BuiltInCategory.OST_Rooms).WhereElementIsNotElementType().ToElements()
-
-
-   # Combine current and linked rooms into a single list
-    rooms_in_view = list(current_rooms) + linked_rooms  
-
-    
-    # Collect all room tags in the active view
-    room_tags = FilteredElementCollector(doc, view.Id).OfCategory(BuiltInCategory.OST_RoomTags).WhereElementIsNotElementType().ToElements()
-    for tag in room_tags:
-        if not tag.Room:  # Check if the tag is not linked to a room
-            doc.Delete(tag.Id)
-    # Create a set of already tagged room IDs
-    tagged_room_ids = set(tag.Room.Id for tag in room_tags if hasattr(tag, "Room") and tag.Room)
-
-    for room in rooms_in_view:
-        # Skip if the room is already tagged
-        if room.Id in tagged_room_ids:
-            continue
-
-        location = room.Location
-        room_center = location.Point
-        room_center_uv = UV(room_center.X, room_center.Y)
-        room_tag = doc.Create.NewRoomTag(LinkElementId(room.Id),room_center_uv,view.Id)
-        if link_doc:
-            room_tag = doc.Create.NewRoomTag(LinkElementId(link_instance.Id, room.Id),room_center_uv,view.Id)
-
-
-
     all_room_tags = FilteredElementCollector(doc, view.Id).OfCategory(BuiltInCategory.OST_RoomTags).WhereElementIsNotElementType().ToElements()
 
     owned_elements = []
@@ -226,95 +249,173 @@ for view in selected_views:
     else:
             owned_elements = all_room_tags
 
+# Collect all rooms visible in the active view from linked models
+linked_rooms = []
+for link_instance in FilteredElementCollector(doc).OfClass(RevitLinkInstance):
+    link_doc = link_instance.GetLinkDocument()
+    if link_doc:
+        linked_rooms += FilteredElementCollector(link_doc, view.Id).OfCategory(BuiltInCategory.OST_Rooms).WhereElementIsNotElementType().ToElements()
+
+
+t = Transaction(doc, "place tags")
+t.Start()
+
+for view in selected_views:
+    
+    # Collect all rooms visible in the active view from the current document
+    current_rooms = FilteredElementCollector(doc, view.Id).OfCategory(BuiltInCategory.OST_Rooms).WhereElementIsNotElementType().ToElements()
+
+    # Collect all rooms visible in the active view from linked models
+    linked_rooms = []
+    for link_instance in FilteredElementCollector(doc).OfClass(RevitLinkInstance):
+        link_doc = link_instance.GetLinkDocument()
+        if link_doc:
+            linked_rooms += FilteredElementCollector(link_doc, view.Id).OfCategory(BuiltInCategory.OST_Rooms).WhereElementIsNotElementType().ToElements()
+
+
+   # Combine current and linked rooms into a single list
+    rooms_in_view = list(current_rooms) + linked_rooms  
+
+    
+    # Collect all room tags in the active view
     for tag in owned_elements:
-        linked = []
+
+        tag_location = tag.Location.Point
+        room = tag.Room
+        if tag.HasLeader:
+            continue
+        if not tag.Room:
+            doc.Delete(tag.Id)
+
+
+
+    # Create a set of already tagged room IDs
+
+    updated_room_tags = FilteredElementCollector(doc, view.Id).OfCategory(BuiltInCategory.OST_RoomTags).WhereElementIsNotElementType().ToElements()
+    tagged_room_ids = set(tag.Room.Id for tag in updated_room_tags if hasattr(tag, "Room") and tag.Room)
+
+    for room in rooms_in_view:
+        # Skip if the room is already tagged
+        if room.Id in tagged_room_ids:
+            continue
+
+        location = room.Location
+        room_center = location.Point
+        room_center_uv = UV(room_center.X, room_center.Y)
+        room_tag = doc.Create.NewRoomTag(LinkElementId(room.Id),room_center_uv,view.Id)
+            # Collect all rooms visible in the active view from linked models
+        linked_rooms = []
+        link_doc = []
+        for link_instance in FilteredElementCollector(doc).OfClass(RevitLinkInstance):
+            link_doc = link_instance.GetLinkDocument()
+
+        if link_doc:
+            has_tag_inside = False
+            for tag in updated_room_tags:
+                if tag.HasLeader:  # For tags with a leader
+                    leader_end_point = tag.LeaderEnd
+
+
+                    # Get room boundary as a polygon
+                    boundary_points = get_room_boundary_as_polygon(room)
+                    if not boundary_points:
+
+                        continue  # Skip rooms without boundaries
+
+                    # Check if the leader endpoint is inside the room boundary
+                    if is_point_inside_boundary(leader_end_point, boundary_points):
+                        has_tag_inside = True
+            if has_tag_inside:
+                    continue
+            else:
+                room_tag = doc.Create.NewRoomTag(LinkElementId(link_instance.Id, room.Id),room_center_uv,view.Id)
+
+
+
+t.Commit()
+
+
+t = Transaction(doc, "Center Room Tags")
+t.Start()
+
+for view in selected_views:
+    all_room_tags = FilteredElementCollector(doc, view.Id).OfCategory(BuiltInCategory.OST_RoomTags).WhereElementIsNotElementType().ToElements()
+
+    for tag in all_room_tags:
+        if tag.HasLeader:  # Skip tags with leaders
+            continue
+
         room = tag.Room
         tag_location = tag.Location.Point
 
-        if room is None:
-            linked_rooms = get_rooms_from_linked_models(doc) 
-            room = find_linked_room_for_tag(tag_location, linked_rooms)
-            if room:
-                linked.append(room)
+        if room is None:  # Attempt to find a linked room
+            for linked_room in rooms_in_view:
+                if find_linked_room_for_tag(tag_location, linked_room):
+                    room = linked_room
+                    break
             else:
+
                 continue
 
         boundary_segments = room.GetBoundarySegments(SpatialElementBoundaryOptions())
 
         if not boundary_segments:
-            print("no boundary segements for room", room.Id)
+
             continue
 
+        # Handling small boundary rooms
         if len(boundary_segments[0]) <= 5:
             room_bb = room.get_BoundingBox(view)
             room_center = (room_bb.Min + room_bb.Max) / 2
 
             if room.IsPointInRoom(room_center):
                 move_room_and_tag(tag, room, room_center)
-                centered_tags_count += 1  # Increment the counter
+
             else:
+
                 ignored_rooms.append(room)
+            continue
 
-        else:
+        # Handling larger polygonal rooms
+        try:
             curve_loop = CurveLoop()
-            outer_loop = boundary_segments[0]
-
-            for segment in outer_loop:
-                curve = segment.GetCurve()
-                curve_loop.Append(curve)
+            for segment in boundary_segments[0]:
+                curve_loop.Append(segment.GetCurve())
 
             height = 0.1
             extrusion_direction = XYZ(0, 0, 1)
             solid = GeometryCreationUtilities.CreateExtrusionGeometry([curve_loop], extrusion_direction, height)
 
-            bottom_face = None
-            for face in solid.Faces:
-                normal = face.ComputeNormal(UV(0.5, 0.5))
-                if normal.IsAlmostEqualTo(XYZ(0, 0, -1)):
-                    bottom_face = face
-                    break
+            bottom_face = next((face for face in solid.Faces if face.ComputeNormal(UV(0.5, 0.5)).IsAlmostEqualTo(XYZ(0, 0, -1))), None)
 
             if bottom_face:
                 mesh = bottom_face.Triangulate()
-
-                triangle_areas = []
-                largest_area = 0
                 largest_triangle_center = None
+                largest_area = 0
 
                 for i in range(mesh.NumTriangles):
-                    try:
-                        triangle = mesh.get_Triangle(i)
+                    triangle = mesh.get_Triangle(i)
+                    pt1, pt2, pt3 = triangle.get_Vertex(0), triangle.get_Vertex(1), triangle.get_Vertex(2)
+                    area = calculate_triangle_area(pt1, pt2, pt3)
 
-                        pt1 = triangle.get_Vertex(0)
-                        pt2 = triangle.get_Vertex(1)
-                        pt3 = triangle.get_Vertex(2)
+                    if area > largest_area:
+                        largest_area = area
+                        largest_triangle_center = get_triangle_center(pt1, pt2, pt3)
 
-                        area = calculate_triangle_area(pt1, pt2, pt3)
-                        triangle_areas.append(area)
+                if largest_triangle_center and room.IsPointInRoom(largest_triangle_center):
+                    move_room_and_tag(tag, room, largest_triangle_center)
 
-                        if area > largest_area:
-                            largest_area = area
-                            largest_triangle_center = get_triangle_center(pt1, pt2, pt3)
-                    except Exception as e:
-                        print("error processing mesh for room ")
-                        
-
-                if is_similar_area(triangle_areas):
-                    room_bb = room.get_BoundingBox(view)
-                    room_center = (room_bb.Min + room_bb.Max) / 2
-                    if room.IsPointInRoom(room_center):
-                        move_room_and_tag(tag, room, room_center)
-                        centered_tags_count += 1  # Increment the counter
-                    else:
-                        ignored_rooms.append(room)
                 else:
-                    if largest_triangle_center and room.IsPointInRoom(largest_triangle_center):
-                        move_room_and_tag(tag, room, largest_triangle_center)
-                        centered_tags_count += 1  # Increment the counter
-                    else:
-                        ignored_rooms.append(room)
+
+                    ignored_rooms.append(room)
+
+        except Exception as e:
+            print("Error processing room: {0}, {1}".format(room.Id, e))
+            ignored_rooms.append(room)
 
 t.Commit()
+
+tg.Assimilate()
 
 if unowned_elements or ignored_rooms:
     output.print_md(header_data)

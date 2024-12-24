@@ -36,7 +36,7 @@ header_data = " | ".join([
 
 
 # Step 1: User selects discipline
-disciplines = ["AR-Architecture", "AG-Signage", "AI-Interiors", "AC-Acoustics", "FLS-Fire & Life Safety"]
+disciplines = ["AR-Architecture", "SC-Structural Concrete" , "SS-Structural Steel", "AG-Signage", "AI-Interiors", "AC-Acoustics", "FLS-Fire & Life Safety"]
 selected_discipline = forms.SelectFromList.show(disciplines, title="Select Discipline", multiselect=False)
 if not selected_discipline:
     TaskDialog.Show("Error", "No discipline selected.")
@@ -95,11 +95,18 @@ excel_workbook = xlrd.open_workbook(excel_file)
 excel_worksheet = excel_workbook.sheet_by_index(0)  # Adjust sheet index as needed
 
 
-# Function to duplicate and configure templates
 def duplicate_template(base_template, scale, new_template_name):
-    if new_template_name.lower() in existing_template_names:
+    # Retrieve the current view template names to ensure uniqueness
+    existing_names = [vt.Name.lower() for vt in FilteredElementCollector(doc)
+                      .OfClass(View)
+                      .WhereElementIsNotElementType()
+                      .ToElements() if vt.IsTemplate]
+
+    if new_template_name.lower() in existing_names:
+        print("Template name '{}' already exists.".format(new_template_name))
         return
-    
+
+    # Copy the template
     element_ids = List[ElementId]([base_template.Id])
     options = CopyPasteOptions()
 
@@ -108,15 +115,23 @@ def duplicate_template(base_template, scale, new_template_name):
     )
 
     v_new = doc.GetElement(copied_ids[0])
-    v_new.Name = new_template_name
-    existing_template_names.add(new_template_name.lower())  # Add new template name to the set
+    
+    # Ensure the new view is a template
+    if not v_new.IsTemplate:
+        v_new.IsTemplate = True
+
+    # Set the new template name
+    try:
+        v_new.Name = new_template_name
+    except Exception as e:
+        print("Failed to set the name '{}': {}".format(new_template_name, e))
+        return
 
     # Set the view scale and detail level
     detail_level_param = v_new.LookupParameter("Detail Level")
     view_scale_param = v_new.LookupParameter("View Scale")
 
     if detail_level_param and view_scale_param:
-        # Add parameters to non-controlled IDs
         non_controlled_ids = List[ElementId]([detail_level_param.Id, view_scale_param.Id])
         v_new.SetNonControlledTemplateParameterIds(non_controlled_ids)
 
@@ -132,7 +147,7 @@ def duplicate_template(base_template, scale, new_template_name):
         non_controlled_ids.Remove(view_scale_param.Id)
         v_new.SetNonControlledTemplateParameterIds(non_controlled_ids)
     else:
-        print("failed")
+        print("Failed to locate view parameters.")
 
 
 
@@ -182,7 +197,7 @@ for row in range(1, excel_worksheet.nrows):  # Start from 1 to skip the header
     col_b = clean_float_value(col_b)
     col_c = clean_float_value(col_c)
     col_d = clean_float_value(col_d)
-    col_e = clean_float_value(col_e)
+
     col_f = clean_float_value(col_f)
     col_g = clean_float_value(col_g)
     col_h = clean_float_value(col_h)
@@ -206,6 +221,10 @@ for row in range(1, excel_worksheet.nrows):  # Start from 1 to skip the header
     # Update column I values to "FLOOR PLAN" if they match specific keywords
     if col_l.lower() in ["key plan", "overall plan", "floor plan"]:
         col_l = "FLOOR PLAN"
+    if col_l.lower() in ["framing plan", "structual framing plan", "framing"]:
+        col_l = "STRUCTURAL FRAMING PLAN"
+    if col_l.lower() in ["foundation plan", "structual foundation plan", "foundation"]:
+        col_l = "STRUCTURAL FOUNDATION PLAN"
     col_l = col_l.title()
     # Replace ":" with "/" in column H values
     col_m = col_m.replace(":", "/")
@@ -219,8 +238,16 @@ for row in range(1, excel_worksheet.nrows):  # Start from 1 to skip the header
 # Step 4: Retrieve and filter view templates
 view_templates = FilteredElementCollector(doc).OfCategory(BuiltInCategory.OST_Views).ToElements()
 floor_plan_templates = [vt for vt in view_templates if vt.IsTemplate and vt.ViewType == ViewType.FloorPlan]
-elevation_templates = [vt for vt in view_templates if vt.IsTemplate and vt.ViewType == ViewType.Elevation]
-all_existing_templates = floor_plan_templates + elevation_templates
+reflected_ceiling_plan_templates = [vt for vt in view_templates if vt.IsTemplate and vt.ViewType == ViewType.CeilingPlan]
+elevation_template = [vt for vt in view_templates if vt.IsTemplate and vt.ViewType == ViewType.Elevation]
+
+
+# Remove templates with " Wall" in their names
+elevation_templates = [vt for vt in elevation_template if "wall" not in vt.Name.strip().lower()]
+
+
+
+all_existing_templates = floor_plan_templates + elevation_templates + reflected_ceiling_plan_templates
 
 
 #Check if the required templates exist based on Column J and K values
@@ -229,8 +256,9 @@ templates_to_create = []
 for row in combined_data:
     col_l, col_m = row[11], row[12]
     # Check for scales 1:150 or 1:300 in col_j and construct template name accordingly
-    if col_m in ["1/150", "1/250", "1/300", "1/500"]:
+    if col_m in ["1/100", "1/150", "1/250", "1/300", "1/500"]:
         template_name = "{}_{}_{}".format(split_discipline, col_l, col_m)
+
 
 
         if "elevation" in template_name.lower():
@@ -247,11 +275,19 @@ for row in combined_data:
             else:
                 continue    
         
+        elif "framing" in template_name.lower():
+            template_exists = next((vt for vt in reflected_ceiling_plan_templates if vt.Name.lower() == template_name.lower()),None)
+            if template_exists == None:
+                templates_to_create.append(template_name)
+            else:
+                continue    
+
         else:
             template_exists = next((vt for vt in floor_plan_templates if vt.Name.lower() == template_name.lower()),None)
 
             if template_exists == None:
                 templates_to_create.append(template_name)
+
             else:
                 continue
 
@@ -263,41 +299,63 @@ existing_template_names = {vt.Name.lower() for vt in all_existing_templates}  # 
 
 for template_name in templates_to_create:
 
-    if '1/150' in template_name:
+
+    if '1/100' in template_name:
         if template_name.lower() in existing_template_names:
             continue
-        scale = 150
+        scale = 100
         # Create a new template name with 1/100
-        new_template_name = template_name.replace("1/150", "1/100")  # Change the scale to 1/100
+        new_template_name = template_name.replace("1/100", "1/100")  # Change the scale to 1/100
+
+        # Check if the base template exists in the document
+        base_plan_template = next((vt for vt in floor_plan_templates if vt.Name.lower() == new_template_name.lower()),None)
+        # Special case for structural plans: Create "ST/SS_Structural Foundation Plan_1/100" if it doesn't exist
+        if not base_plan_template and "Structural Foundation" in new_template_name:
+            structural_foundation_template = next((vt for vt in floor_plan_templates if vt.Name.lower() == "Structural Foundation Plan".lower()), None)
+            if structural_foundation_template:
+                element_ids = List[ElementId]([structural_foundation_template.Id])
+                options = CopyPasteOptions()
+                copied_ids = ElementTransformUtils.CopyElements(doc, element_ids, doc, Transform.Identity, options)
+                new_structural_foundation_template = doc.GetElement(copied_ids[0])
+                base_plan_template = new_structural_foundation_template
 
 
         # Check if the base template exists in the document
-        base_plan_template = next(
-            (vt for vt in floor_plan_templates if vt.Name.lower() == new_template_name.lower()),
-            None
-        )
+        base_elevation_template = next((vt for vt in elevation_templates if vt.Name.lower() == new_template_name.lower()),None)
+        # Special case for elevations: Create "Elevation_1/100" if it doesn't exist
+        if not base_elevation_template and "{}_Elevation_1/100".format(split_discipline) in new_template_name:
+            base_arch_elevation_template = next((vt for vt in elevation_templates if vt.Name.lower() == "architectural elevation"), None)
+            if base_arch_elevation_template:
+                element_ids = List[ElementId]([base_arch_elevation_template.Id])
+                options = CopyPasteOptions()
+                copied_ids = ElementTransformUtils.CopyElements(doc, element_ids, doc, Transform.Identity, options)
+                new_elevation_template = doc.GetElement(copied_ids[0])
+                base_elevation_template = new_elevation_template
 
-        # Check if the base template exists in the document
-        base_elevation_template = next(
-            (vt for vt in elevation_templates if vt.Name.lower() == new_template_name.lower()),
-            None
-        )
 
         # Check if the base template exists in the document
         base_section_template = next((vt for vt in elevation_templates if vt.Name.lower() == new_template_name.lower()),None)
         # Special case for sections: Create "AR_Section_1/100" if it doesn't exist
-        if not base_section_template and "AR_Section_1/100" in new_template_name:
+        if not base_section_template and "{}_Section_1/100".format(split_discipline) in new_template_name:
             base_arch_section_template = next((vt for vt in elevation_templates if vt.Name.lower() == "architectural section"), None)
             if base_arch_section_template:
                 element_ids = List[ElementId]([base_arch_section_template.Id])
                 options = CopyPasteOptions()
                 copied_ids = ElementTransformUtils.CopyElements(doc, element_ids, doc, Transform.Identity, options)
                 new_section_template = doc.GetElement(copied_ids[0])
-                new_section_template.Name = "AR_Section_1/100"
                 base_section_template = new_section_template
-                existing_template_names.add(new_section_template.Name.lower())
 
-
+        # Check if the base template exists in the document
+        base_rcp_template = next((vt for vt in reflected_ceiling_plan_templates if vt.Name.lower() == new_template_name.lower()),None)
+        # Special case for sections: Create "AR_Section_1/100" if it doesn't exist
+        if not base_rcp_template and "Structural Framing" in new_template_name:
+            base_rcp_template = next((vt for vt in reflected_ceiling_plan_templates if vt.Name.lower() == "structural framing plan"), None)
+            if base_rcp_template:
+                element_ids = List[ElementId]([base_rcp_template.Id])
+                options = CopyPasteOptions()
+                copied_ids = ElementTransformUtils.CopyElements(doc, element_ids, doc, Transform.Identity, options)
+                new_rcp_template = doc.GetElement(copied_ids[0])
+                base_rcp_template = new_rcp_template
 
 
         # Process each template type
@@ -307,6 +365,80 @@ for template_name in templates_to_create:
             duplicate_template(base_elevation_template, scale, template_name)
         if base_section_template:
             duplicate_template(base_section_template, scale, template_name)
+        if base_rcp_template:
+            duplicate_template(base_rcp_template, scale, template_name)
+
+
+
+    if '1/150' in template_name:
+        if template_name.lower() in existing_template_names:
+            continue
+        scale = 150
+        # Create a new template name with 1/100
+        new_template_name = template_name.replace("1/150", "1/100")  # Change the scale to 1/100
+
+
+        # Check if the base template exists in the document
+        base_plan_template = next((vt for vt in floor_plan_templates if vt.Name.lower() == new_template_name.lower()),None)
+        # Special case for structural plans: Create "ST/SS_Structural Foundation Plan_1/100" if it doesn't exist
+        if not base_plan_template and "Structural Foundation" in new_template_name:
+            structural_foundation_template = next((vt for vt in floor_plan_templates if vt.Name.lower() == "Structural Foundation Plan".lower()), None)
+            if structural_foundation_template:
+                element_ids = List[ElementId]([structural_foundation_template.Id])
+                options = CopyPasteOptions()
+                copied_ids = ElementTransformUtils.CopyElements(doc, element_ids, doc, Transform.Identity, options)
+                new_structural_foundation_template = doc.GetElement(copied_ids[0])
+                base_plan_template = new_structural_foundation_template
+
+
+        # Check if the base template exists in the document
+        base_elevation_template = next((vt for vt in elevation_templates if vt.Name.lower() == new_template_name.lower()),None)
+        # Special case for elevations: Create "Elevation_1/100" if it doesn't exist
+        if not base_elevation_template and "{}_Elevation_1/100".format(split_discipline) in new_template_name:
+            base_arch_elevation_template = next((vt for vt in elevation_templates if vt.Name.lower() == "architectural elevation"), None)
+            if base_arch_elevation_template:
+                element_ids = List[ElementId]([base_arch_elevation_template.Id])
+                options = CopyPasteOptions()
+                copied_ids = ElementTransformUtils.CopyElements(doc, element_ids, doc, Transform.Identity, options)
+                new_elevation_template = doc.GetElement(copied_ids[0])
+                base_elevation_template = new_elevation_template
+
+
+        # Check if the base template exists in the document
+        base_section_template = next((vt for vt in elevation_templates if vt.Name.lower() == new_template_name.lower()),None)
+        # Special case for sections: Create "AR_Section_1/100" if it doesn't exist
+        if not base_section_template and "{}_Section_1/100".format(split_discipline) in new_template_name:
+            base_arch_section_template = next((vt for vt in elevation_templates if vt.Name.lower() == "architectural section"), None)
+            if base_arch_section_template:
+                element_ids = List[ElementId]([base_arch_section_template.Id])
+                options = CopyPasteOptions()
+                copied_ids = ElementTransformUtils.CopyElements(doc, element_ids, doc, Transform.Identity, options)
+                new_section_template = doc.GetElement(copied_ids[0])
+                base_section_template = new_section_template
+
+
+        # Check if the base template exists in the document
+        base_rcp_template = next((vt for vt in reflected_ceiling_plan_templates if vt.Name.lower() == new_template_name.lower()),None)
+        # Special case for sections: Create "AR_Section_1/100" if it doesn't exist
+        if not base_rcp_template and "Structural Framing" in new_template_name:
+            base_rcp_template = next((vt for vt in reflected_ceiling_plan_templates if vt.Name.lower() == "structural framing plan"), None)
+            if base_rcp_template:
+                element_ids = List[ElementId]([base_rcp_template.Id])
+                options = CopyPasteOptions()
+                copied_ids = ElementTransformUtils.CopyElements(doc, element_ids, doc, Transform.Identity, options)
+                new_rcp_template = doc.GetElement(copied_ids[0])
+                base_rcp_template = new_rcp_template
+
+
+        # Process each template type
+        if base_plan_template:
+            duplicate_template(base_plan_template, scale, template_name)
+        if base_elevation_template:
+            duplicate_template(base_elevation_template, scale, template_name)
+        if base_section_template:
+            duplicate_template(base_section_template, scale, template_name)
+        if base_rcp_template:
+            duplicate_template(base_rcp_template, scale, template_name)
 
 
     if '1/250' in template_name:
@@ -323,28 +455,54 @@ for template_name in templates_to_create:
             (vt for vt in floor_plan_templates if vt.Name.lower() == new_template_name.lower()),
             None
         )
+        # Special case for structural plans: Create "ST/SS_Structural Foundation Plan_1/100" if it doesn't exist
+        if not base_plan_template and "Structural Foundation" in new_template_name:
+            structural_foundation_template = next((vt for vt in floor_plan_templates if vt.Name.lower() == "Structural Foundation Plan".lower()), None)
+            if structural_foundation_template:
+                element_ids = List[ElementId]([structural_foundation_template.Id])
+                options = CopyPasteOptions()
+                copied_ids = ElementTransformUtils.CopyElements(doc, element_ids, doc, Transform.Identity, options)
+                new_structural_foundation_template = doc.GetElement(copied_ids[0])
+                base_plan_template = new_structural_foundation_template
+
 
         # Check if the base template exists in the document
-        base_elevation_template = next(
-            (vt for vt in elevation_templates if vt.Name.lower() == new_template_name.lower()),
-            None
-        )
+        base_elevation_template = next((vt for vt in elevation_templates if vt.Name.lower() == new_template_name.lower()),None)
+        # Special case for elevations: Create "Elevation_1/100" if it doesn't exist
+        if not base_elevation_template and "{}_Elevation_1/100".format(split_discipline) in new_template_name:
+            base_arch_elevation_template = next((vt for vt in elevation_templates if vt.Name.lower() == "architectural elevation"), None)
+            if base_arch_elevation_template:
+                element_ids = List[ElementId]([base_arch_elevation_template.Id])
+                options = CopyPasteOptions()
+                copied_ids = ElementTransformUtils.CopyElements(doc, element_ids, doc, Transform.Identity, options)
+                new_elevation_template = doc.GetElement(copied_ids[0])
+                base_elevation_template = new_elevation_template
+
 
         # Check if the base template exists in the document
         base_section_template = next((vt for vt in elevation_templates if vt.Name.lower() == new_template_name.lower()),None)
         # Special case for sections: Create "AR_Section_1/100" if it doesn't exist
-        if not base_section_template and "AR_Section_1/100" in new_template_name:
+        if not base_section_template and "{}_Section_1/100".format(split_discipline) in new_template_name:
             base_arch_section_template = next((vt for vt in elevation_templates if vt.Name.lower() == "architectural section"), None)
             if base_arch_section_template:
                 element_ids = List[ElementId]([base_arch_section_template.Id])
                 options = CopyPasteOptions()
                 copied_ids = ElementTransformUtils.CopyElements(doc, element_ids, doc, Transform.Identity, options)
                 new_section_template = doc.GetElement(copied_ids[0])
-                new_section_template.Name = "AR_Section_1/100"
                 base_section_template = new_section_template
-                existing_template_names.add(new_section_template.Name.lower())
 
 
+        # Check if the base template exists in the document
+        base_rcp_template = next((vt for vt in reflected_ceiling_plan_templates if vt.Name.lower() == new_template_name.lower()),None)
+        # Special case for sections: Create "AR_Section_1/100" if it doesn't exist
+        if not base_rcp_template and "Structural Framing" in new_template_name:
+            base_rcp_template = next((vt for vt in reflected_ceiling_plan_templates if vt.Name.lower() == "structural framing plan"), None)
+            if base_rcp_template:
+                element_ids = List[ElementId]([base_rcp_template.Id])
+                options = CopyPasteOptions()
+                copied_ids = ElementTransformUtils.CopyElements(doc, element_ids, doc, Transform.Identity, options)
+                new_rcp_template = doc.GetElement(copied_ids[0])
+                base_rcp_template = new_rcp_template
 
         # Process each template type
         if base_plan_template:
@@ -353,7 +511,8 @@ for template_name in templates_to_create:
             duplicate_template(base_elevation_template, scale, template_name)
         if base_section_template:
             duplicate_template(base_section_template, scale, template_name)
-
+        if base_rcp_template:
+            duplicate_template(base_rcp_template, scale, template_name)
 
 
     # Check if the template name has a scale pattern we want to modify
@@ -370,27 +529,53 @@ for template_name in templates_to_create:
             (vt for vt in floor_plan_templates if vt.Name.lower() == new_template_name.lower()),
             None
         )
+        # Special case for structural plans: Create "ST/SS_Structural Foundation Plan_1/100" if it doesn't exist
+        if not base_plan_template and "Structural Foundation" in new_template_name:
+            structural_foundation_template = next((vt for vt in floor_plan_templates if vt.Name.lower() == "Structural Foundation Plan".lower()), None)
+            if structural_foundation_template:
+                element_ids = List[ElementId]([structural_foundation_template.Id])
+                options = CopyPasteOptions()
+                copied_ids = ElementTransformUtils.CopyElements(doc, element_ids, doc, Transform.Identity, options)
+                new_structural_foundation_template = doc.GetElement(copied_ids[0])
+                base_plan_template = new_structural_foundation_template
+
 
         # Check if the base template exists in the document
-        base_elevation_template = next(
-            (vt for vt in elevation_templates if vt.Name.lower() == new_template_name.lower()),
-            None
-        )
+        base_elevation_template = next((vt for vt in elevation_templates if vt.Name.lower() == new_template_name.lower()),None)
+        # Special case for elevations: Create "Elevation_1/100" if it doesn't exist
+        if not base_elevation_template and "{}_Elevation_1/100".format(split_discipline) in new_template_name:
+            base_arch_elevation_template = next((vt for vt in elevation_templates if vt.Name.lower() == "architectural elevation"), None)
+            if base_arch_elevation_template:
+                element_ids = List[ElementId]([base_arch_elevation_template.Id])
+                options = CopyPasteOptions()
+                copied_ids = ElementTransformUtils.CopyElements(doc, element_ids, doc, Transform.Identity, options)
+                new_elevation_template = doc.GetElement(copied_ids[0])
+                base_elevation_template = new_elevation_template
+
 
         # Check if the base template exists in the document
         base_section_template = next((vt for vt in elevation_templates if vt.Name.lower() == new_template_name.lower()),None)
         # Special case for sections: Create "AR_Section_1/100" if it doesn't exist
-        if not base_section_template and "AR_Section_1/100" in new_template_name:
+        if not base_section_template and "{}_Section_1/100".format(split_discipline) in new_template_name:
             base_arch_section_template = next((vt for vt in elevation_templates if vt.Name.lower() == "architectural section"), None)
             if base_arch_section_template:
                 element_ids = List[ElementId]([base_arch_section_template.Id])
                 options = CopyPasteOptions()
                 copied_ids = ElementTransformUtils.CopyElements(doc, element_ids, doc, Transform.Identity, options)
                 new_section_template = doc.GetElement(copied_ids[0])
-                new_section_template.Name = "AR_Section_1/100"
                 base_section_template = new_section_template
-                existing_template_names.add(new_section_template.Name.lower())
 
+        # Check if the base template exists in the document
+        base_rcp_template = next((vt for vt in reflected_ceiling_plan_templates if vt.Name.lower() == new_template_name.lower()),None)
+        # Special case for sections: Create "AR_Section_1/100" if it doesn't exist
+        if not base_rcp_template and "Structural Framing" in new_template_name:
+            base_rcp_template = next((vt for vt in reflected_ceiling_plan_templates if vt.Name.lower() == "structural framing plan"), None)
+            if base_rcp_template:
+                element_ids = List[ElementId]([base_rcp_template.Id])
+                options = CopyPasteOptions()
+                copied_ids = ElementTransformUtils.CopyElements(doc, element_ids, doc, Transform.Identity, options)
+                new_rcp_template = doc.GetElement(copied_ids[0])
+                base_rcp_template = new_rcp_template
 
         # Process each template type
         if base_plan_template:
@@ -399,6 +584,8 @@ for template_name in templates_to_create:
             duplicate_template(base_elevation_template, scale, template_name)
         if base_section_template:
             duplicate_template(base_section_template, scale, template_name)
+        if base_rcp_template:
+            duplicate_template(base_rcp_template, scale, template_name)
 
 
 
@@ -417,28 +604,55 @@ for template_name in templates_to_create:
             (vt for vt in floor_plan_templates if vt.Name.lower() == new_template_name.lower()),
             None
         )
+        # Special case for structural plans: Create "ST/SS_Structural Foundation Plan_1/100" if it doesn't exist
+        if not base_plan_template and "Structural Foundation" in new_template_name:
+            structural_foundation_template = next((vt for vt in floor_plan_templates if vt.Name.lower() == "Structural Foundation Plan".lower()), None)
+            if structural_foundation_template:
+                element_ids = List[ElementId]([structural_foundation_template.Id])
+                options = CopyPasteOptions()
+                copied_ids = ElementTransformUtils.CopyElements(doc, element_ids, doc, Transform.Identity, options)
+                new_structural_foundation_template = doc.GetElement(copied_ids[0])
+                base_plan_template = new_structural_foundation_template
+
 
         # Check if the base template exists in the document
-        base_elevation_template = next(
-            (vt for vt in elevation_templates if vt.Name.lower() == new_template_name.lower()),
-            None
-        )
+        base_elevation_template = next((vt for vt in elevation_templates if vt.Name.lower() == new_template_name.lower()),None)
+        # Special case for elevations: Create "Elevation_1/100" if it doesn't exist
+        if not base_elevation_template and "{}_Elevation_1/100".format(split_discipline) in new_template_name:
+            base_arch_elevation_template = next((vt for vt in elevation_templates if vt.Name.lower() == "architectural elevation"), None)
+            if base_arch_elevation_template:
+                element_ids = List[ElementId]([base_arch_elevation_template.Id])
+                options = CopyPasteOptions()
+                copied_ids = ElementTransformUtils.CopyElements(doc, element_ids, doc, Transform.Identity, options)
+                new_elevation_template = doc.GetElement(copied_ids[0])
+                base_elevation_template = new_elevation_template
+
 
         # Check if the base template exists in the document
         base_section_template = next((vt for vt in elevation_templates if vt.Name.lower() == new_template_name.lower()),None)
         # Special case for sections: Create "AR_Section_1/100" if it doesn't exist
-        if not base_section_template and "AR_Section_1/100" in new_template_name:
+        if not base_section_template and "{}_Section_1/100".format(split_discipline) in new_template_name:
             base_arch_section_template = next((vt for vt in elevation_templates if vt.Name.lower() == "architectural section"), None)
             if base_arch_section_template:
                 element_ids = List[ElementId]([base_arch_section_template.Id])
                 options = CopyPasteOptions()
                 copied_ids = ElementTransformUtils.CopyElements(doc, element_ids, doc, Transform.Identity, options)
                 new_section_template = doc.GetElement(copied_ids[0])
-                new_section_template.Name = "AR_Section_1/100"
                 base_section_template = new_section_template
-                existing_template_names.add(new_section_template.Name.lower())
 
                      
+
+        # Check if the base template exists in the document
+        base_rcp_template = next((vt for vt in reflected_ceiling_plan_templates if vt.Name.lower() == new_template_name.lower()),None)
+        # Special case for sections: Create "AR_Section_1/100" if it doesn't exist
+        if not base_rcp_template and "Structural Framing" in new_template_name:
+            base_rcp_template = next((vt for vt in reflected_ceiling_plan_templates if vt.Name.lower() == "structural framing plan"), None)
+            if base_rcp_template:
+                element_ids = List[ElementId]([base_rcp_template.Id])
+                options = CopyPasteOptions()
+                copied_ids = ElementTransformUtils.CopyElements(doc, element_ids, doc, Transform.Identity, options)
+                new_rcp_template = doc.GetElement(copied_ids[0])
+                base_rcp_template = new_rcp_template
 
         # Process each template type
         if base_plan_template:
@@ -447,6 +661,8 @@ for template_name in templates_to_create:
             duplicate_template(base_elevation_template, scale, template_name)
         if base_section_template:
             duplicate_template(base_section_template, scale, template_name)
+        if base_rcp_template:
+            duplicate_template(base_rcp_template, scale, template_name)
 
 t.Commit()
 
@@ -458,10 +674,15 @@ updated_view_templates = FilteredElementCollector(doc).OfCategory(BuiltInCategor
 
 # Filter templates for Floor Plan, Elevation, and Section
 updated_floor_plan_templates = [vt for vt in updated_view_templates if vt.IsTemplate and vt.ViewType == ViewType.FloorPlan]
-updated_elevation_templates = [vt for vt in updated_view_templates if vt.IsTemplate and vt.ViewType == ViewType.Elevation]
+updated_elevation_template = [vt for vt in updated_view_templates if vt.IsTemplate and vt.ViewType == ViewType.Elevation]
+
+# Remove templates with " Wall" in their names
+updated_elevation_templates = [vt for vt in updated_elevation_template if "wall" not in vt.Name.strip().lower()]
 
 
-all_templates = updated_floor_plan_templates + updated_elevation_templates 
+updated_rcp_templates = [vt for vt in updated_view_templates if vt.IsTemplate and vt.ViewType == ViewType.CeilingPlan]
+
+all_templates = updated_floor_plan_templates + updated_elevation_templates  + updated_rcp_templates
 
 
 
@@ -508,7 +729,7 @@ for row in combined_data:
         selected_templates.append(None)  # Append None if no matching template is found
 
         # Add a suggestion for unmatched templates based on column data
-        suggestion = "{}_{}_{}".format(discipline, col_k, col_j)  # Example naming convention for suggestions
+        suggestion = "{}_{}_{}".format(split_discipline, col_l, col_m)  # Example naming convention for suggestions
         template_suggestions.append(suggestion)
 
 # Filter combined data to keep only those rows that had a matching template
@@ -525,6 +746,15 @@ if template_suggestions:
 # ALL VIEW TYPES
 
 view_types = FilteredElementCollector(doc).OfClass(ViewFamilyType).ToElements()
+
+view_types_rcp = [vt for vt in view_types if vt.ViewFamily == ViewFamily.CeilingPlan]
+if not view_types_rcp:
+    TaskDialog.Show("Error", "No RCP View Types available.")
+    script.exit()
+
+rcp_type = view_types_rcp[0]
+
+
 view_types_plans = [vt for vt in view_types if vt.ViewFamily == ViewFamily.FloorPlan]
 if not view_types_plans:
     TaskDialog.Show("Error", "No Floor Plan View Types available.")
@@ -532,743 +762,1190 @@ if not view_types_plans:
 
 floor_plan_type = view_types_plans[0]
 
-try:
-    tg = TransactionGroup(doc, "Create Floor Plans")
-    tg.Start()
-    
-    counter = 1
-    new_names = []
-    skipped_views = []
-    existing_views = FilteredElementCollector(doc).OfClass(View).WhereElementIsNotElementType()
-    existing_view_names = {v.Name for v in FilteredElementCollector(doc).OfClass(View).WhereElementIsNotElementType()}
-    existing_sheets = {s.Name for s in FilteredElementCollector(doc).OfClass(ViewSheet).WhereElementIsNotElementType()}
+
+tg = TransactionGroup(doc, "Create Floor Plans")
+tg.Start()
+
+counter = 1
+new_names = []
+skipped_views = []
+existing_views = FilteredElementCollector(doc).OfClass(View).WhereElementIsNotElementType()
+    # Collect all views
+all_the_views = FilteredElementCollector(doc) \
+    .OfClass(View) \
+    .WhereElementIsNotElementType() \
+    .ToElements()
+
+# Filter only elevation views
+elevation_views = [view for view in all_the_views if view.ViewType == ViewType.Elevation]
+section_views = [view for view in all_the_views if view.ViewType == ViewType.Section]
+scope_box_views = elevation_views
+
+existing_view_names = {v.Name for v in FilteredElementCollector(doc).OfClass(View).WhereElementIsNotElementType()}
+
+existing_sheets = {s.Name for s in FilteredElementCollector(doc).OfClass(ViewSheet).WhereElementIsNotElementType()}
 
 
-    # Place each created view on its corresponding sheet
-    for row_data, matching_template, matching_level in matching_rows:
+# Filter out views that are already placed on sheets
+placed_view_ids = {
+    vp.ViewId for vp in FilteredElementCollector(doc).OfClass(Viewport)
+}
+placed_views = [
+    view for view in elevation_views if view.Id in placed_view_ids
+]
+unplaced_views = [
+    view for view in elevation_views if view.Id not in placed_view_ids
+]
 
-        matched_views = []
-        col_a, col_b, col_c, col_d, col_e, col_f, col_g, col_h,col_i,  col_j, col_k, col_l, col_m, col_n, col_o, col_p, col_q, col_r, col_s, col_t, split_discipline = row_data
+all_scopeboxes = FilteredElementCollector(doc).OfCategory(BuiltInCategory.OST_VolumeOfInterest).ToElements()
+
+# Place each created view on its corresponding sheet
+for row_data, matching_template, matching_level in matching_rows:
+
+    matched_views = []
+    col_a, col_b, col_c, col_d, col_e, col_f, col_g, col_h,col_i,  col_j, col_k, col_l, col_m, col_n, col_o, col_p, col_q, col_r, col_s, col_t, split_discipline = row_data
 
 
-        if col_l.lower() in ["elevation"]:
+    if col_l.lower() in ["elevation"]:
 
-            t = Transaction(doc, "place elevations")
-            t.Start()
+        t = Transaction(doc, "place elevations")
+        t.Start()
 
-            view_names = [name.strip() for name in col_o.split(",")]
+        # Filter out views that are already placed on sheets
+        placed_view_ids = {
+            vp.ViewId for vp in FilteredElementCollector(doc).OfClass(Viewport)
+        }
+        placed_views = [
+            view for view in elevation_views if view.Id in placed_view_ids
+        ]
+        unplaced_views = [
+            view for view in elevation_views if view.Id not in placed_view_ids
+        ]
 
-            # Filter out views that are already placed on sheets
-            placed_view_ids = {
-                vp.ViewId for vp in FilteredElementCollector(doc).OfClass(Viewport)
-            }
-            placed_views = [
-                view for view in existing_views if view.Id in placed_view_ids
-            ]
-            unplaced_views = [
-                view for view in existing_views if view.Id not in placed_view_ids
-            ]
+        elevation_scope_box_views = []
+        matched_elevation_scope_box = []
+        view_names = [name.strip() for name in col_o.split(",")]
+        scopeboxname_excel = [name.strip() for name in col_p.split(",")]
 
-            for view_name in view_names:
-                for view in unplaced_views:
-                    if view.Name.lower()== view_name.lower():
-                        matched_views.append(view)
-
-            for view_name in view_names:
-                for view in placed_views:
-                    if view.Name.lower()== view_name.lower():
-                        if col_p:
-                            scope_boxes = FilteredElementCollector(doc).OfCategory(BuiltInCategory.OST_VolumeOfInterest).ToElements()
-                            scope_box = None
-                            for sb in scope_boxes:
-                                sb_name = sb.Name
-                                if sb_name == (col_p):
-                                    scope_box = sb
-                                    break
+        for scopebox in all_scopeboxes:
+                for sb_name in scopeboxname_excel:
+                    if sb_name == scopebox.Name:
+                        matched_elevation_scope_box.append(scopebox)
                     
-                            view.get_Parameter(BuiltInParameter.VIEWER_VOLUME_OF_INTEREST_CROP).Set(scope_box.Id)
+        for view_name in view_names:
+            for view in unplaced_views:
+                if view.Name.lower()== view_name.lower():
+                    matched_views.append(view)
 
-                        
-            for new_view in matched_views:
-                # Assign the view template
+        for view_name in view_names:
+            for view in elevation_views:
+                if view.Name.lower()== view_name.lower():
+                    elevation_scope_box_views.append(view)
+
+        for new_view in matched_views:
+            if new_view:
                 if matching_template:
-                    new_view.ViewTemplateId = matching_template.Id
-
-                if col_p:
-                    scope_boxes = FilteredElementCollector(doc).OfCategory(BuiltInCategory.OST_VolumeOfInterest).ToElements()
-                    scope_box = None
-                    for sb in scope_boxes:
-                        sb_name = sb.Name
-                        if sb_name == (col_p):
-                            scope_box = sb
-                            break
-            
-                    new_view.get_Parameter(BuiltInParameter.VIEWER_VOLUME_OF_INTEREST_CROP).Set(scope_box.Id)
-            
-            # Place the view on the corresponding sheet
-            sheet_name = col_k
-            sheet_number = col_j
-
-
-            # Check if there’s an existing sheet with the same number but a different discipline
-            conflicting_sheet = next((s for s in FilteredElementCollector(doc).OfClass(ViewSheet)
-                                    if s.SheetNumber == sheet_number and 
-                                    s.LookupParameter("Sub-Discipline").AsString() != selected_discipline), None)
-
-            if conflicting_sheet:
-                t.RollBack()
-                TaskDialog.Show("Error", "A sheet with the same sheet number exists under a different discipline. Please use a unique sheet number or discipline.")
-                script.exit()
-
+                    primary_view_id = new_view.GetPrimaryViewId()
+                    if primary_view_id != ElementId.InvalidElementId:
+                        primary_view = doc.GetElement(primary_view_id)
+                        primary_view.ViewTemplateId = matching_template.Id
+                    else:
+                        new_view.ViewTemplateId = matching_template.Id
             else:
-
-                existing_sheet = next((s for s in FilteredElementCollector(doc).OfClass(ViewSheet)
-                            if s.Name == sheet_name and s.SheetNumber == sheet_number and s.LookupParameter("Sub-Discipline").AsString() == selected_discipline), None)
-
-                if existing_sheet:
-                    sheet = existing_sheet
-
-                else:
-                    # Create a new sheet if it doesn't exist
-                    sheet = ViewSheet.Create(doc, selected_title_block_type.Id)
-                    sheet.Name = sheet_name
-                    sheet.SheetNumber = sheet_number
-                    existing_sheets.add(sheet_name)
-
-                    new_names.append((new_view.Name, sheet.Name))
-
-
-                # Set sheet parameters if available
-                folder_parameter = sheet.LookupParameter("Folder")
-                if folder_parameter and folder_parameter.StorageType == StorageType.String:
-                    folder_parameter.Set("Elevation")
-                subdiscipline_parameter = sheet.LookupParameter("Sub-Discipline")
-                if subdiscipline_parameter and folder_parameter.StorageType == StorageType.String:
-                    subdiscipline_parameter.Set(selected_discipline)
-
-                a_value = excel_worksheet.cell_value(0, 0)  
-                if a_value:
-                    a_parameter = sheet.LookupParameter(a_value)
-                    if a_parameter and a_parameter.StorageType == StorageType.String:
-                        a_parameter.Set(col_a)
-                    else:
-                        print("No parameter found for {}".format(a_value))
-
-
-                b_value = excel_worksheet.cell_value(0, 1).strip()
-                if b_value:
-                    b_parameter = sheet.LookupParameter(b_value)
-                    if b_parameter and b_parameter.StorageType == StorageType.String:
-                        b_parameter.Set(col_b)
-                    else:
-                        print("No parameter found for {}".format(b_value))
-
-                c_value = excel_worksheet.cell_value(0, 2).strip()
-                if c_value:
-                    c_parameter = sheet.LookupParameter(c_value)
-                    if c_parameter and c_parameter.StorageType == StorageType.String:
-                        c_parameter.Set(col_c)
-                    else:
-                        print("No parameter found for {}".format(c_value))
-
-
-
-                d_value = excel_worksheet.cell_value(0, 3).strip()
-                if d_value:
-                    d_parameter = sheet.LookupParameter(d_value)
-                    if d_parameter and d_parameter.StorageType == StorageType.String:
-                        d_parameter.Set(col_d)
-                    else:
-                        print("No parameter found for {}".format(d_value))
-
-
-                e_value = excel_worksheet.cell_value(0, 4).strip()
-                if e_value:
-                    e_parameter = sheet.LookupParameter(e_value)
-                    if e_parameter and e_parameter.StorageType == StorageType.String:
-                        e_parameter.Set(col_e)
-                    else:
-                        print("No parameter found for {}".format(e_value))
-
-
-                f_value = excel_worksheet.cell_value(0, 5).strip()
-                if f_value:
-                    f_parameter = sheet.LookupParameter(f_value)
-                    if f_parameter and f_parameter.StorageType == StorageType.String:
-                        f_parameter.Set(col_f)
-                    else:
-                        print("No parameter found for {}".format(f_value))
-
-
-                g_value = excel_worksheet.cell_value(0, 6).strip()
-                if g_value:
-    
-                    g_parameter = sheet.LookupParameter(g_value)
-
-                    if g_parameter and g_parameter.StorageType == StorageType.String:
-                        g_parameter.Set(col_g)
-                    else:
-                        print("No parameter found for {}".format(g_value))
-
-
-                h_value = excel_worksheet.cell_value(0, 7).strip()
-                if h_value:
-                    h_parameter = sheet.LookupParameter(h_value)
-                    if h_parameter and h_parameter.StorageType == StorageType.String:
-                        h_parameter.Set(col_h)
-                    else:
-                        print("No parameter found for {}".format(h_value))
-
-
-
-                i_value = excel_worksheet.cell_value(0, 8).strip()
-                if i_value:
-                    i_parameter = sheet.LookupParameter(i_value)
-                    if i_parameter and i_parameter.StorageType == StorageType.String:
-                        i_parameter.Set(col_i)
-                    else:
-                        print("No parameter found for {}".format(i_value))
-
-                drawn_parameter = sheet.LookupParameter("Drawn By")
-                if drawn_parameter and drawn_parameter.StorageType == StorageType.String:
-                    drawn_parameter.Set(col_q)
-                designed_parameter = sheet.LookupParameter("Designed By")
-                if designed_parameter and designed_parameter.StorageType == StorageType.String:
-                    designed_parameter.Set(col_r)
-                checked_parameter = sheet.LookupParameter("Checked By")
-                if checked_parameter and checked_parameter.StorageType == StorageType.String:
-                    checked_parameter.Set(col_s)
-                approved_parameter = sheet.LookupParameter("Approved By")
-                if approved_parameter and approved_parameter.StorageType == StorageType.String:
-                    approved_parameter.Set(col_t)
-
-                existing_sheets.add(sheet.Name)
-
-            t.Commit()
-
-            # Position the view on the sheet
-            title_block_bb = selected_title_block_type.get_BoundingBox(None)
-            sheet_center = XYZ((title_block_bb.Max.X + title_block_bb.Min.X) / 2- 0.18209,(title_block_bb.Max.Y + title_block_bb.Min.Y) / 2, 0)
-            offset = 0.2
-            
-            if sheet:
-                for index, new_view in enumerate(matched_views):
-                    view_position = XYZ(sheet_center.X, sheet_center.Y - (index*offset), 0)
-                    try:
-
-                        t=Transaction(doc, "place views")
-                        t.Start()
-                        Viewport.Create(doc, sheet.Id, new_view.Id, view_position)
-
-                        t.Commit()
-
-                    except Exception as e:
-                        print("Failed to place view {} on sheet {}: {}".format(new_view.Name, sheet_name, str(e)))
-
-                        # Record the end time and runtime
-                        end_time = time.time()
-                        runtime = end_time - start_time
-
-                        # Log the error details
-                        error_occured = ("Failed to place view {} on sheet {}: {}".format(new_view.Name, sheet_name, str(e)))
-                        run_result = "Error"
-                        element_count = 10
-
-                        # Function to log run data in case of error
-                        get_run_data(__title__, runtime, element_count, manual_time, run_result, error_occured)
-                        
-      
-            else:
-                skipped_views.append((sheet.SheetNumber, sheet.Name) )
-
-        elif col_l.lower() in ["section"]:
-            
-            t = Transaction(doc, "place sections")
-            t.Start()
-
-            view_names = [name.strip() for name in col_o.split(",")]
-
-            # Filter out views that are already placed on sheets
-            placed_view_ids = {
-                vp.ViewId for vp in FilteredElementCollector(doc).OfClass(Viewport)
-            }
-            placed_views = [
-                view for view in existing_views if view.Id in placed_view_ids
-            ]
-            unplaced_views = [
-                view for view in existing_views if view.Id not in placed_view_ids
-            ]
-
-            for view_name in view_names:
-                for view in unplaced_views:
-                    if view.Name.lower()== view_name.lower():
-                        matched_views.append(view)
-
-            for view_name in view_names:
-                for view in placed_views:
-                    if view.Name.lower()== view_name.lower():
-                        if col_p:
-                            scope_boxes = FilteredElementCollector(doc).OfCategory(BuiltInCategory.OST_VolumeOfInterest).ToElements()
-                            scope_box = None
-                            for sb in scope_boxes:
-                                sb_name = sb.Name
-                                if sb_name == (col_p):
-                                    scope_box = sb
-                                    break
-                    
-                            view.get_Parameter(BuiltInParameter.VIEWER_VOLUME_OF_INTEREST_CROP).Set(scope_box.Id)
-
-            for new_view in matched_views:
-                # Assign the view template
-                if matching_template:
-                    new_view.ViewTemplateId = matching_template.Id
-
-                if col_p:
-                    scope_boxes = FilteredElementCollector(doc).OfCategory(BuiltInCategory.OST_VolumeOfInterest).ToElements()
-                    scope_box = None
-                    for sb in scope_boxes:
-                        sb_name = sb.Name
-                        if sb_name == (col_p):
-                            scope_box = sb
-                            break
-            
-                    new_view.get_Parameter(BuiltInParameter.VIEWER_VOLUME_OF_INTEREST_CROP).Set(scope_box.Id)
-            
-            # Place the view on the corresponding sheet
-            sheet_name = col_k
-            sheet_number = col_j
-
-
-            # Check if there’s an existing sheet with the same number but a different discipline
-            conflicting_sheet = next((s for s in FilteredElementCollector(doc).OfClass(ViewSheet)
-                                    if s.SheetNumber == sheet_number and 
-                                    s.LookupParameter("Sub-Discipline").AsString() != selected_discipline), None)
-
-            if conflicting_sheet:
-                t.RollBack()
-                TaskDialog.Show("Error", "A sheet with the same sheet number exists under a different discipline. Please use a unique sheet number or discipline.")
-                script.exit()
-
-            else:
-
-                existing_sheet = next((s for s in FilteredElementCollector(doc).OfClass(ViewSheet)
-                            if s.Name == sheet_name and s.SheetNumber == sheet_number and s.LookupParameter("Sub-Discipline").AsString() == selected_discipline), None)
-
-                if existing_sheet:
-                    sheet = existing_sheet
-
-                else:
-                    # Create a new sheet if it doesn't exist
-                    sheet = ViewSheet.Create(doc, selected_title_block_type.Id)
-                    sheet.Name = sheet_name
-                    sheet.SheetNumber = sheet_number
-                    existing_sheets.add(sheet_name)
-
-                    new_names.append((new_view.Name, sheet.Name))
-
-
-                # Set sheet parameters if available
-                folder_parameter = sheet.LookupParameter("Folder")
-                if folder_parameter and folder_parameter.StorageType == StorageType.String:
-                    folder_parameter.Set("Section")
-                subdiscipline_parameter = sheet.LookupParameter("Sub-Discipline")
-                if subdiscipline_parameter and folder_parameter.StorageType == StorageType.String:
-                    subdiscipline_parameter.Set(selected_discipline)
-
-                a_value = excel_worksheet.cell_value(0, 0)  
-                if a_value:
-                    a_parameter = sheet.LookupParameter(a_value)
-                    if a_parameter and a_parameter.StorageType == StorageType.String:
-                        a_parameter.Set(col_a)
-                    else:
-                        print("No parameter found for {}".format(a_value))
-
-
-                b_value = excel_worksheet.cell_value(0, 1).strip()
-                if b_value:
-                    b_parameter = sheet.LookupParameter(b_value)
-                    if b_parameter and b_parameter.StorageType == StorageType.String:
-                        b_parameter.Set(col_b)
-                    else:
-                        print("No parameter found for {}".format(b_value))
-
-                c_value = excel_worksheet.cell_value(0, 2).strip()
-                if c_value:
-                    c_parameter = sheet.LookupParameter(c_value)
-                    if c_parameter and c_parameter.StorageType == StorageType.String:
-                        c_parameter.Set(col_c)
-                    else:
-                        print("No parameter found for {}".format(c_value))
-
-
-
-                d_value = excel_worksheet.cell_value(0, 3).strip()
-                if d_value:
-                    d_parameter = sheet.LookupParameter(d_value)
-                    if d_parameter and d_parameter.StorageType == StorageType.String:
-                        d_parameter.Set(col_d)
-                    else:
-                        print("No parameter found for {}".format(d_value))
-
-
-                e_value = excel_worksheet.cell_value(0, 4).strip()
-                if e_value:
-                    e_parameter = sheet.LookupParameter(e_value)
-                    if e_parameter and e_parameter.StorageType == StorageType.String:
-                        e_parameter.Set(col_e)
-                    else:
-                        print("No parameter found for {}".format(e_value))
-
-
-                f_value = excel_worksheet.cell_value(0, 5).strip()
-                if f_value:
-                    f_parameter = sheet.LookupParameter(f_value)
-                    if f_parameter and f_parameter.StorageType == StorageType.String:
-                        f_parameter.Set(col_f)
-                    else:
-                        print("No parameter found for {}".format(f_value))
-
-
-                g_value = excel_worksheet.cell_value(0, 6).strip()
-                if g_value:
-    
-                    g_parameter = sheet.LookupParameter(g_value)
-
-                    if g_parameter and g_parameter.StorageType == StorageType.String:
-                        g_parameter.Set(col_g)
-                    else:
-                        print("No parameter found for {}".format(g_value))
-
-
-                h_value = excel_worksheet.cell_value(0, 7).strip()
-                if h_value:
-                    h_parameter = sheet.LookupParameter(h_value)
-                    if h_parameter and h_parameter.StorageType == StorageType.String:
-                        h_parameter.Set(col_h)
-                    else:
-                        print("No parameter found for {}".format(h_value))
-
-
-
-                i_value = excel_worksheet.cell_value(0, 8).strip()
-                if i_value:
-                    i_parameter = sheet.LookupParameter(i_value)
-                    if i_parameter and i_parameter.StorageType == StorageType.String:
-                        i_parameter.Set(col_i)
-                    else:
-                        print("No parameter found for {}".format(i_value))
-
-                drawn_parameter = sheet.LookupParameter("Drawn By")
-                if drawn_parameter and drawn_parameter.StorageType == StorageType.String:
-                    drawn_parameter.Set(col_q)
-                designed_parameter = sheet.LookupParameter("Designed By")
-                if designed_parameter and designed_parameter.StorageType == StorageType.String:
-                    designed_parameter.Set(col_r)
-                checked_parameter = sheet.LookupParameter("Checked By")
-                if checked_parameter and checked_parameter.StorageType == StorageType.String:
-                    checked_parameter.Set(col_s)
-                approved_parameter = sheet.LookupParameter("Approved By")
-                if approved_parameter and approved_parameter.StorageType == StorageType.String:
-                    approved_parameter.Set(col_t)
-
-                existing_sheets.add(sheet.Name)
-
-            t.Commit()
-
-            # Position the view on the sheet
-            title_block_bb = selected_title_block_type.get_BoundingBox(None)
-            sheet_center = XYZ((title_block_bb.Max.X + title_block_bb.Min.X) / 2- 0.18209,(title_block_bb.Max.Y + title_block_bb.Min.Y) / 2, 0)
-            offset = 0.2
-            
-            if sheet:
-                for index, new_view in enumerate(matched_views):
-                    view_position = XYZ(sheet_center.X, sheet_center.Y - (index*offset), 0)
-                    try:
-
-                        t=Transaction(doc, "place views")
-                        t.Start()
-                        Viewport.Create(doc, sheet.Id, new_view.Id, view_position)
-
-                        t.Commit()
-
-                    except Exception as e:
-                        print("Failed to place view {} on sheet {}: {}".format(new_view.Name, sheet_name, str(e)))
-
-                        # Record the end time and runtime
-                        end_time = time.time()
-                        runtime = end_time - start_time
-
-                        # Log the error details
-                        error_occured = ("Failed to place view {} on sheet {}: {}".format(new_view.Name, sheet_name, str(e)))
-                        run_result = "Error"
-                        element_count = 10
-
-                        # Function to log run data in case of error
-                        get_run_data(__title__, runtime, element_count, manual_time, run_result, error_occured)
-                        
-      
-            else:
-                skipped_views.append((sheet.SheetNumber, sheet.Name) )
-
-
-        # Create a view name using the level information
-        else:
-            if matching_level:
-                t = Transaction(doc, "create plans")
-                t.Start()
-
-                level = matching_level[0]
-                view_name = "{}_{}".format(col_l,level.Name)
-                # Check if a view with the same name exists and meets the criteria
-
                 new_view = None
-                unique_view_name = view_name
+
+        if col_p: 
+            if len(elevation_scope_box_views) == len(matched_elevation_scope_box):  # Ensure all lists have matching lengths
+                for i, view in enumerate(elevation_scope_box_views):
+                    try:
+                        sb = matched_elevation_scope_box[i]  # Access `scopy` safely
+                        view.get_Parameter(BuiltInParameter.VIEWER_VOLUME_OF_INTEREST_CROP).Set(sb.Id)
+                    except IndexError:
+                        print("Index out of range for list of scope box:", i)
+            elif len(matched_elevation_scope_box) == 1:
+
+                try:
+                    for view in elevation_scope_box_views:
+                        for sb in matched_elevation_scope_box:
+                            view.get_Parameter(BuiltInParameter.VIEWER_VOLUME_OF_INTEREST_CROP).Set(sb.Id)
+                except IndexError:
+                        print("Index out of range for list of scope box:", i)
+            else:
+                print("List Length Mismatch for Scope Box and Views")
+
+        else:
+            # If col_p is empty, remove the assigned scope box
+            for view in elevation_scope_box_views:
+                try:
+                    scope_box_param = view.get_Parameter(BuiltInParameter.VIEWER_VOLUME_OF_INTEREST_CROP)
+                    if scope_box_param:
+                        scope_box_param.Set(ElementId.InvalidElementId)  # Use this to clear the scope box
+                except Exception as e:
+                    print("Error removing scope box from view {}: {}".format(view.Name, e))
 
 
-                if new_view is None:
-                    counter = 1
-                    while unique_view_name in existing_view_names:
-                        unique_view_name = "{}_{}".format(view_name, counter)
-                        counter += 1
+        # Place the view on the corresponding sheet
+        sheet_name = col_k
+        sheet_number = col_j
 
-                    # Create the floor plan view and set name
-                    new_view = ViewPlan.Create(doc, floor_plan_type.Id, level.Id)
-                    new_view.Name = unique_view_name
-                    existing_view_names.add(new_view.Name)
 
-                # Assign the view template
+        # Check if there’s an existing sheet with the same number but a different discipline
+        conflicting_sheet = next((s for s in FilteredElementCollector(doc).OfClass(ViewSheet)
+                                if s.SheetNumber == sheet_number and 
+                                s.LookupParameter("Sub-Discipline").AsString() != selected_discipline), None)
+
+        if conflicting_sheet:
+            t.RollBack()
+            TaskDialog.Show("Error", "A sheet with the same sheet number exists under a different discipline. Please use a unique sheet number or discipline.")
+            script.exit()
+
+        else:
+
+            existing_sheet = next((s for s in FilteredElementCollector(doc).OfClass(ViewSheet)
+                        if s.Name == sheet_name and s.SheetNumber == sheet_number and s.LookupParameter("Sub-Discipline").AsString() == selected_discipline), None)
+
+            if existing_sheet:
+                sheet = existing_sheet
+
+            else:
+                # Create a new sheet if it doesn't exist
+                sheet = ViewSheet.Create(doc, selected_title_block_type.Id)
+                sheet.Name = sheet_name
+                sheet.SheetNumber = sheet_number
+                existing_sheets.add(sheet_name)
+                if new_view:
+                    new_names.append((new_view.Name, sheet.Name))
+
+
+            # Set sheet parameters if available
+            folder_parameter = sheet.LookupParameter("Folder")
+            if folder_parameter and folder_parameter.StorageType == StorageType.String:
+                folder_parameter.Set("Elevation")
+            subdiscipline_parameter = sheet.LookupParameter("Sub-Discipline")
+            if subdiscipline_parameter and folder_parameter.StorageType == StorageType.String:
+                subdiscipline_parameter.Set(selected_discipline)
+
+            a_value = excel_worksheet.cell_value(0, 0)  
+            if a_value:
+                a_parameter = sheet.LookupParameter(a_value)
+                if a_parameter and a_parameter.StorageType == StorageType.String:
+                    a_parameter.Set(col_a)
+                else:
+                    print("No parameter found for {}".format(a_value))
+
+
+            b_value = excel_worksheet.cell_value(0, 1).strip()
+            if b_value:
+                b_parameter = sheet.LookupParameter(b_value)
+                if b_parameter and b_parameter.StorageType == StorageType.String:
+                    b_parameter.Set(col_b)
+                else:
+                    print("No parameter found for {}".format(b_value))
+
+            c_value = excel_worksheet.cell_value(0, 2).strip()
+            if c_value:
+                c_parameter = sheet.LookupParameter(c_value)
+                if c_parameter and c_parameter.StorageType == StorageType.String:
+                    c_parameter.Set(col_c)
+                else:
+                    print("No parameter found for {}".format(c_value))
+
+
+
+            d_value = excel_worksheet.cell_value(0, 3).strip()
+            if d_value:
+                d_parameter = sheet.LookupParameter(d_value)
+                if d_parameter and d_parameter.StorageType == StorageType.String:
+                    d_parameter.Set(col_d)
+                else:
+                    print("No parameter found for {}".format(d_value))
+
+
+            e_value = excel_worksheet.cell_value(0, 4).strip()
+            if e_value:
+                e_parameter = sheet.LookupParameter(e_value)
+                if e_parameter and e_parameter.StorageType == StorageType.String:
+                    e_parameter.Set(col_e)
+                else:
+                    print("No parameter found for {}".format(e_value))
+
+
+            f_value = excel_worksheet.cell_value(0, 5).strip()
+            if f_value:
+                f_parameter = sheet.LookupParameter(f_value)
+                if f_parameter and f_parameter.StorageType == StorageType.String:
+                    f_parameter.Set(col_f)
+                else:
+                    print("No parameter found for {}".format(f_value))
+
+
+            g_value = excel_worksheet.cell_value(0, 6).strip()
+            if g_value:
+
+                g_parameter = sheet.LookupParameter(g_value)
+
+                if g_parameter and g_parameter.StorageType == StorageType.String:
+                    g_parameter.Set(col_g)
+                else:
+                    print("No parameter found for {}".format(g_value))
+
+
+            h_value = excel_worksheet.cell_value(0, 7).strip()
+            if h_value:
+                h_parameter = sheet.LookupParameter(h_value)
+                if h_parameter and h_parameter.StorageType == StorageType.String:
+                    h_parameter.Set(col_h)
+                else:
+                    print("No parameter found for {}".format(h_value))
+
+
+
+            i_value = excel_worksheet.cell_value(0, 8).strip()
+            if i_value:
+                i_parameter = sheet.LookupParameter(i_value)
+                if i_parameter and i_parameter.StorageType == StorageType.String:
+                    i_parameter.Set(col_i)
+                else:
+                    print("No parameter found for {}".format(i_value))
+
+            drawn_parameter = sheet.LookupParameter("Drawn By")
+            if drawn_parameter and drawn_parameter.StorageType == StorageType.String:
+                drawn_parameter.Set(col_q)
+            designed_parameter = sheet.LookupParameter("Designed By")
+            if designed_parameter and designed_parameter.StorageType == StorageType.String:
+                designed_parameter.Set(col_r)
+            checked_parameter = sheet.LookupParameter("Checked By")
+            if checked_parameter and checked_parameter.StorageType == StorageType.String:
+                checked_parameter.Set(col_s)
+            approved_parameter = sheet.LookupParameter("Approved By")
+            if approved_parameter and approved_parameter.StorageType == StorageType.String:
+                approved_parameter.Set(col_t)
+
+            existing_sheets.add(sheet.Name)
+
+        t.Commit()
+
+        # Position the view on the sheet
+        title_block_bb = selected_title_block_type.get_BoundingBox(None)
+        sheet_center = XYZ((title_block_bb.Max.X + title_block_bb.Min.X) / 2- 0.18209,(title_block_bb.Max.Y + title_block_bb.Min.Y) / 2, 0)
+        offset = 0.2
+        
+        if sheet:
+            for index, new_view in enumerate(matched_views):
+                view_position = XYZ(sheet_center.X, sheet_center.Y - (index*offset), 0)
+                try:
+
+                    t=Transaction(doc, "place views")
+                    t.Start()
+                    Viewport.Create(doc, sheet.Id, new_view.Id, view_position)
+
+                    t.Commit()
+
+                except Exception as e:
+                    print("Failed to place view {} on sheet {}: {}".format(new_view.Name, sheet_name, str(e)))
+
+                    # Record the end time and runtime
+                    end_time = time.time()
+                    runtime = end_time - start_time
+
+                    # Log the error details
+                    error_occured = ("Failed to place view {} on sheet {}: {}".format(new_view.Name, sheet_name, str(e)))
+                    run_result = "Error"
+                    element_count = 10
+
+                    # Function to log run data in case of error
+                    get_run_data(__title__, runtime, element_count, manual_time, run_result, error_occured)
+                    
+    
+        else:
+            skipped_views.append((sheet.SheetNumber, sheet.Name) )
+
+    elif col_l.lower() in ["section"]:
+        
+        t = Transaction(doc, "place sections")
+        t.Start()
+
+        new_view = None
+        # Filter out views that are already placed on sheets
+        placed_view_ids = {
+            vp.ViewId for vp in FilteredElementCollector(doc).OfClass(Viewport)
+        }
+        placed_views = [
+            view for view in section_views if view.Id in placed_view_ids
+        ]
+        unplaced_views = [
+            view for view in section_views if view.Id not in placed_view_ids
+        ]
+
+        section_scope_box_views = []
+        matched_section_scope_box = []
+        view_names = [name.strip() for name in col_o.split(",")]
+        scopeboxname_excel = [name.strip() for name in col_p.split(",")]
+
+        for scopebox in all_scopeboxes:
+                for sb_name in scopeboxname_excel:
+                    if sb_name == scopebox.Name:
+                        matched_section_scope_box.append(scopebox)
+                    
+        for view_name in view_names:
+            for view in unplaced_views:
+                if view.Name.lower()== view_name.lower():
+                    matched_views.append(view)
+
+        for view_name in view_names:
+            for view in section_views:
+                if view.Name.lower()== view_name.lower():
+                    section_scope_box_views.append(view)
+
+
+        for new_view in matched_views:
+            if new_view:
                 if matching_template:
-                    new_view.ViewTemplateId = matching_template.Id
+                    primary_view_id = new_view.GetPrimaryViewId()
+                    if primary_view_id != ElementId.InvalidElementId:
+                        primary_view = doc.GetElement(primary_view_id)
+                        primary_view.ViewTemplateId = matching_template.Id
+                    else:
+                        new_view.ViewTemplateId = matching_template.Id
+            else:
+                new_view = None
 
-                if col_p:
-                    scope_boxes = FilteredElementCollector(doc).OfCategory(BuiltInCategory.OST_VolumeOfInterest).ToElements()
-                    scope_box = None
-                    for sb in scope_boxes:
-                        sb_name = sb.Name
-                        if sb_name == (col_p):
-                            scope_box = sb
-                            break
+
+        if col_p: 
+
+            if len(section_scope_box_views) == len(matched_section_scope_box):  # Ensure all lists have matching lengths
+                for i, view in enumerate(section_scope_box_views):
+                    try:
+                        sb = matched_section_scope_box[i]  # Access `scopy` safely
+                        view.get_Parameter(BuiltInParameter.VIEWER_VOLUME_OF_INTEREST_CROP).Set(sb.Id)
+                    except IndexError:
+                        print("Index out of range for list of scope box:", i)
+            elif len(matched_section_scope_box) == 1:
+                try:
+                    for view in section_scope_box_views:
+                        for sb in matched_section_scope_box:
+                            view.get_Parameter(BuiltInParameter.VIEWER_VOLUME_OF_INTEREST_CROP).Set(sb.Id)
+                except IndexError:
+                        print("Index out of range for list of scope box:", i)
+            else:
+                print("List Length Mismatch for Scope Box and Views")
+
+        else:
+            # If col_p is empty, remove the assigned scope box
+            for view in section_scope_box_views:
+                try:
+                    scope_box_param = view.get_Parameter(BuiltInParameter.VIEWER_VOLUME_OF_INTEREST_CROP)
+                    if scope_box_param:
+                        scope_box_param.Set(ElementId.InvalidElementId)  # Use this to clear the scope box
+                except Exception as e:
+                    print("Error removing scope box from view {}: {}".format(view.Name, e))
+
+
+        # Place the view on the corresponding sheet
+        sheet_name = col_k
+        sheet_number = col_j
+
+
+        # Check if there’s an existing sheet with the same number but a different discipline
+        conflicting_sheet = next((s for s in FilteredElementCollector(doc).OfClass(ViewSheet)
+                                if s.SheetNumber == sheet_number and 
+                                s.LookupParameter("Sub-Discipline").AsString() != selected_discipline), None)
+
+        if conflicting_sheet:
+            t.RollBack()
+            TaskDialog.Show("Error", "A sheet with the same sheet number exists under a different discipline. Please use a unique sheet number or discipline.")
+            script.exit()
+
+        else:
+
+            existing_sheet = next((s for s in FilteredElementCollector(doc).OfClass(ViewSheet)
+                        if s.Name == sheet_name and s.SheetNumber == sheet_number and s.LookupParameter("Sub-Discipline").AsString() == selected_discipline), None)
+
+            if existing_sheet:
+                sheet = existing_sheet
+
+            else:
+                # Create a new sheet if it doesn't exist
+                sheet = ViewSheet.Create(doc, selected_title_block_type.Id)
+                sheet.Name = sheet_name
+                sheet.SheetNumber = sheet_number
+                existing_sheets.add(sheet_name)
+                if new_view:
+                    new_names.append((new_view.Name, sheet.Name))
+
+
+            # Set sheet parameters if available
+            folder_parameter = sheet.LookupParameter("Folder")
+            if folder_parameter and folder_parameter.StorageType == StorageType.String:
+                folder_parameter.Set("Section")
+            subdiscipline_parameter = sheet.LookupParameter("Sub-Discipline")
+            if subdiscipline_parameter and folder_parameter.StorageType == StorageType.String:
+                subdiscipline_parameter.Set(selected_discipline)
+
+            a_value = excel_worksheet.cell_value(0, 0)  
+            if a_value:
+                a_parameter = sheet.LookupParameter(a_value)
+                if a_parameter and a_parameter.StorageType == StorageType.String:
+                    a_parameter.Set(col_a)
+                else:
+                    print("No parameter found for {}".format(a_value))
+
+
+            b_value = excel_worksheet.cell_value(0, 1).strip()
+            if b_value:
+                b_parameter = sheet.LookupParameter(b_value)
+                if b_parameter and b_parameter.StorageType == StorageType.String:
+                    b_parameter.Set(col_b)
+                else:
+                    print("No parameter found for {}".format(b_value))
+
+            c_value = excel_worksheet.cell_value(0, 2).strip()
+            if c_value:
+                c_parameter = sheet.LookupParameter(c_value)
+                if c_parameter and c_parameter.StorageType == StorageType.String:
+                    c_parameter.Set(col_c)
+                else:
+                    print("No parameter found for {}".format(c_value))
+
+
+
+            d_value = excel_worksheet.cell_value(0, 3).strip()
+            if d_value:
+                d_parameter = sheet.LookupParameter(d_value)
+                if d_parameter and d_parameter.StorageType == StorageType.String:
+                    d_parameter.Set(col_d)
+                else:
+                    print("No parameter found for {}".format(d_value))
+
+
+            e_value = excel_worksheet.cell_value(0, 4).strip()
+            if e_value:
+                e_parameter = sheet.LookupParameter(e_value)
+                if e_parameter and e_parameter.StorageType == StorageType.String:
+                    e_parameter.Set(col_e)
+                else:
+                    print("No parameter found for {}".format(e_value))
+
+
+            f_value = excel_worksheet.cell_value(0, 5).strip()
+            if f_value:
+                f_parameter = sheet.LookupParameter(f_value)
+                if f_parameter and f_parameter.StorageType == StorageType.String:
+                    f_parameter.Set(col_f)
+                else:
+                    print("No parameter found for {}".format(f_value))
+
+
+            g_value = excel_worksheet.cell_value(0, 6).strip()
+            if g_value:
+
+                g_parameter = sheet.LookupParameter(g_value)
+
+                if g_parameter and g_parameter.StorageType == StorageType.String:
+                    g_parameter.Set(col_g)
+                else:
+                    print("No parameter found for {}".format(g_value))
+
+
+            h_value = excel_worksheet.cell_value(0, 7).strip()
+            if h_value:
+                h_parameter = sheet.LookupParameter(h_value)
+                if h_parameter and h_parameter.StorageType == StorageType.String:
+                    h_parameter.Set(col_h)
+                else:
+                    print("No parameter found for {}".format(h_value))
+
+
+
+            i_value = excel_worksheet.cell_value(0, 8).strip()
+            if i_value:
+                i_parameter = sheet.LookupParameter(i_value)
+                if i_parameter and i_parameter.StorageType == StorageType.String:
+                    i_parameter.Set(col_i)
+                else:
+                    print("No parameter found for {}".format(i_value))
+
+            drawn_parameter = sheet.LookupParameter("Drawn By")
+            if drawn_parameter and drawn_parameter.StorageType == StorageType.String:
+                drawn_parameter.Set(col_q)
+            designed_parameter = sheet.LookupParameter("Designed By")
+            if designed_parameter and designed_parameter.StorageType == StorageType.String:
+                designed_parameter.Set(col_r)
+            checked_parameter = sheet.LookupParameter("Checked By")
+            if checked_parameter and checked_parameter.StorageType == StorageType.String:
+                checked_parameter.Set(col_s)
+            approved_parameter = sheet.LookupParameter("Approved By")
+            if approved_parameter and approved_parameter.StorageType == StorageType.String:
+                approved_parameter.Set(col_t)
+
+            existing_sheets.add(sheet.Name)
+
+        t.Commit()
+
+        # Position the view on the sheet
+        title_block_bb = selected_title_block_type.get_BoundingBox(None)
+        sheet_center = XYZ((title_block_bb.Max.X + title_block_bb.Min.X) / 2- 0.18209,(title_block_bb.Max.Y + title_block_bb.Min.Y) / 2, 0)
+        offset = 0.2
+        
+        if sheet:
+            for index, new_view in enumerate(matched_views):
+                view_position = XYZ(sheet_center.X, sheet_center.Y - (index*offset), 0)
+                try:
+
+                    t=Transaction(doc, "place views")
+                    t.Start()
+                    Viewport.Create(doc, sheet.Id, new_view.Id, view_position)
+
+                    t.Commit()
+
+                except Exception as e:
+                    print("Failed to place view {} on sheet {}: {}".format(new_view.Name, sheet_name, str(e)))
+
+                    # Record the end time and runtime
+                    end_time = time.time()
+                    runtime = end_time - start_time
+
+                    # Log the error details
+                    error_occured = ("Failed to place view {} on sheet {}: {}".format(new_view.Name, sheet_name, str(e)))
+                    run_result = "Error"
+                    element_count = 10
+
+                    # Function to log run data in case of error
+                    get_run_data(__title__, runtime, element_count, manual_time, run_result, error_occured)
+                    
+    
+        else:
+            skipped_views.append((sheet.SheetNumber, sheet.Name) )
+
+    elif col_l.lower() in ["structural framing plan"]:
+
+        if matching_level:
+            t = Transaction(doc, "create framing plan")
+            t.Start()
+            # Retrieve the ViewFamilyType for Reflected Ceiling Plans
+            rcp_type = None
+            for vft in DB.FilteredElementCollector(doc).OfClass(DB.ViewFamilyType):
+                if vft.ViewFamily == DB.ViewFamily.CeilingPlan:
+                    rcp_type = vft
+                    break
+
+            if not rcp_type:
+                raise Exception("No Ceiling Plan ViewFamilyType found in the project.")
             
-                    new_view.get_Parameter(BuiltInParameter.VIEWER_VOLUME_OF_INTEREST_CROP).Set(scope_box.Id)
-                
+            level = matching_level[0]
+            view_name = "{}_{}".format(col_l,level.Name)
+            # Check if a view with the same name exists and meets the criteria
+
+            new_view = None
+            unique_view_name = view_name
 
 
-                # Place the view on the corresponding sheet
-                sheet_name = col_k
-                sheet_number = col_j
+            if new_view is None:
+                counter = 1
+                while unique_view_name in existing_view_names:
+                    unique_view_name = "{}_{}".format(view_name, counter)
+                    counter += 1
+
+                # Create the floor plan view and set name
+                new_view = ViewPlan.Create(doc, rcp_type.Id, level.Id)
+                new_view.Name = unique_view_name
+                existing_view_names.add(new_view.Name)
+
+            # Assign the view template
+            if matching_template:
+                new_view.ViewTemplateId = matching_template.Id
+
+            # if col_p:
+            #     scope_boxes = FilteredElementCollector(doc).OfCategory(BuiltInCategory.OST_VolumeOfInterest).ToElements()
+            #     scope_box = None
+            #     for sb in scope_boxes:
+            #         sb_name = sb.Name
+            #         if sb_name == (col_p):
+            #             scope_box = sb
+            #             break
+
+            #         if scope_box is not None:      
+            #             new_view.get_Parameter(BuiltInParameter.VIEWER_VOLUME_OF_INTEREST_CROP).Set(scope_box.Id)
+            # else:
+            #     scope_box_param = new_view.get_Parameter(BuiltInParameter.VIEWER_VOLUME_OF_INTEREST_CROP)
+            #     if scope_box_param:
+            #         scope_box_param.Set(None)  # Remove scope box
 
 
-                # Check if there’s an existing sheet with the same number but a different discipline
-                conflicting_sheet = next((s for s in FilteredElementCollector(doc).OfClass(ViewSheet)
-                                        if s.SheetNumber == sheet_number and 
-                                        s.LookupParameter("Sub-Discipline").AsString() != selected_discipline), None)
+            # Place the view on the corresponding sheet
+            sheet_name = col_k
+            sheet_number = col_j
 
-                if conflicting_sheet:
-                    t.RollBack()
-                    TaskDialog.Show("Error", "A sheet with the same sheet number exists under a different discipline. Please use a unique sheet number or discipline.")
-                    script.exit()
+
+            # Check if there’s an existing sheet with the same number but a different discipline
+            conflicting_sheet = next((s for s in FilteredElementCollector(doc).OfClass(ViewSheet)
+                                    if s.SheetNumber == sheet_number and 
+                                    s.LookupParameter("Sub-Discipline").AsString() != selected_discipline), None)
+
+            if conflicting_sheet:
+                t.RollBack()
+                TaskDialog.Show("Error", "A sheet with the same sheet number exists under a different discipline. Please use a unique sheet number or discipline.")
+                script.exit()
+
+            else:
+
+                existing_sheet = next((s for s in FilteredElementCollector(doc).OfClass(ViewSheet)
+                            if s.Name == sheet_name and s.SheetNumber == sheet_number and s.LookupParameter("Sub-Discipline").AsString() == selected_discipline), None)
+
+                if existing_sheet:
+                    sheet = existing_sheet
 
                 else:
-
-                    existing_sheet = next((s for s in FilteredElementCollector(doc).OfClass(ViewSheet)
-                                if s.Name == sheet_name and s.SheetNumber == sheet_number and s.LookupParameter("Sub-Discipline").AsString() == selected_discipline), None)
-
-                    if existing_sheet:
-                        sheet = existing_sheet
-
-                    else:
-                        # Create a new sheet if it doesn't exist
-                        sheet = ViewSheet.Create(doc, selected_title_block_type.Id)
-                        sheet.Name = sheet_name
-                        sheet.SheetNumber = sheet_number
-                        existing_sheets.add(sheet_name)
-
+                    # Create a new sheet if it doesn't exist
+                    sheet = ViewSheet.Create(doc, selected_title_block_type.Id)
+                    sheet.Name = sheet_name
+                    sheet.SheetNumber = sheet_number
+                    existing_sheets.add(sheet_name)
+                    if new_view:
                         new_names.append((new_view.Name, sheet.Name))
 
 
-                    # Set sheet parameters if available
-                    folder_parameter = sheet.LookupParameter("Folder")
-                    if folder_parameter and folder_parameter.StorageType == StorageType.String:
-                        folder_parameter.Set("Floor Plan")
-                    subdiscipline_parameter = sheet.LookupParameter("Sub-Discipline")
-                    if subdiscipline_parameter and folder_parameter.StorageType == StorageType.String:
-                        subdiscipline_parameter.Set(selected_discipline)
+                # Set sheet parameters if available
+                folder_parameter = sheet.LookupParameter("Folder")
+                if folder_parameter and folder_parameter.StorageType == StorageType.String:
+                    folder_parameter.Set("Floor Plan")
+                subdiscipline_parameter = sheet.LookupParameter("Sub-Discipline")
+                if subdiscipline_parameter and folder_parameter.StorageType == StorageType.String:
+                    subdiscipline_parameter.Set(selected_discipline)
 
-                    a_value = excel_worksheet.cell_value(0, 0)  
-                    if a_value:
-                        a_parameter = sheet.LookupParameter(a_value)
-                        if a_parameter and a_parameter.StorageType == StorageType.String:
-                            a_parameter.Set(col_a)
-                        else:
-                            print("No parameter found for {}".format(a_value))
-
-
-                    b_value = excel_worksheet.cell_value(0, 1).strip()
-                    if b_value:
-                        b_parameter = sheet.LookupParameter(b_value)
-                        if b_parameter and b_parameter.StorageType == StorageType.String:
-                            b_parameter.Set(col_b)
-                        else:
-                            print("No parameter found for {}".format(b_value))
-
-                    c_value = excel_worksheet.cell_value(0, 2).strip()
-                    if c_value:
-                        c_parameter = sheet.LookupParameter(c_value)
-                        if c_parameter and c_parameter.StorageType == StorageType.String:
-                            c_parameter.Set(col_c)
-                        else:
-                            print("No parameter found for {}".format(c_value))
-
-
-
-                    d_value = excel_worksheet.cell_value(0, 3).strip()
-                    if d_value:
-                        d_parameter = sheet.LookupParameter(d_value)
-                        if d_parameter and d_parameter.StorageType == StorageType.String:
-                            d_parameter.Set(col_d)
-                        else:
-                            print("No parameter found for {}".format(d_value))
-
-
-                    e_value = excel_worksheet.cell_value(0, 4).strip()
-                    if e_value:
-                        e_parameter = sheet.LookupParameter(e_value)
-                        if e_parameter and e_parameter.StorageType == StorageType.String:
-                            e_parameter.Set(col_e)
-                        else:
-                            print("No parameter found for {}".format(e_value))
-
-
-                    f_value = excel_worksheet.cell_value(0, 5).strip()
-                    if f_value:
-                        f_parameter = sheet.LookupParameter(f_value)
-                        if f_parameter and f_parameter.StorageType == StorageType.String:
-                            f_parameter.Set(col_f)
-                        else:
-                            print("No parameter found for {}".format(f_value))
-
-
-                    g_value = excel_worksheet.cell_value(0, 6).strip()
-                    if g_value:
-        
-                        g_parameter = sheet.LookupParameter(g_value)
-
-                        if g_parameter and g_parameter.StorageType == StorageType.String:
-                            g_parameter.Set(col_g)
-                        else:
-                            print("No parameter found for {}".format(g_value))
-
-
-                    h_value = excel_worksheet.cell_value(0, 7).strip()
-                    if h_value:
-                        h_parameter = sheet.LookupParameter(h_value)
-                        if h_parameter and h_parameter.StorageType == StorageType.String:
-                            h_parameter.Set(col_h)
-                        else:
-                            print("No parameter found for {}".format(h_value))
-
-
-
-                    i_value = excel_worksheet.cell_value(0, 8).strip()
-                    if i_value:
-                        i_parameter = sheet.LookupParameter(i_value)
-                        if i_parameter and i_parameter.StorageType == StorageType.String:
-                            i_parameter.Set(col_i)
-                        else:
-                            print("No parameter found for {}".format(i_value))
-
-                    drawn_parameter = sheet.LookupParameter("Drawn By")
-                    if drawn_parameter and drawn_parameter.StorageType == StorageType.String:
-                        drawn_parameter.Set(col_q)
-                    designed_parameter = sheet.LookupParameter("Designed By")
-                    if designed_parameter and designed_parameter.StorageType == StorageType.String:
-                        designed_parameter.Set(col_r)
-                    checked_parameter = sheet.LookupParameter("Checked By")
-                    if checked_parameter and checked_parameter.StorageType == StorageType.String:
-                        checked_parameter.Set(col_s)
-                    approved_parameter = sheet.LookupParameter("Approved By")
-                    if approved_parameter and approved_parameter.StorageType == StorageType.String:
-                        approved_parameter.Set(col_t)
-
-                    existing_sheets.add(sheet.Name)
-
-                t.Commit()
-
-                # Position the view on the sheet
-                title_block_bb = selected_title_block_type.get_BoundingBox(None)
-                sheet_center = XYZ((title_block_bb.Max.X + title_block_bb.Min.X) / 2- 0.18209,(title_block_bb.Max.Y + title_block_bb.Min.Y) / 2, 0)
-                
-                if sheet:
-
-                    # Check if the sheet already has views placed on it
-                    viewport_collector = FilteredElementCollector(doc, sheet.Id).OfClass(Viewport)
-                    if viewport_collector.GetElementCount() == 0:
-                        try:
-                            t=Transaction(doc, "place views")
-                            t.Start()
-                            Viewport.Create(doc, sheet.Id, new_view.Id, sheet_center)
-
-                            tb_center = (title_block_bb.Min + title_block_bb.Max) / 2
-
-                            # Get the viewport on the sheet
-                            viewports = list(FilteredElementCollector(doc, sheet.Id).OfCategory(BuiltInCategory.OST_Viewports))
-                            if not viewports:
-                                print("No viewport found on the sheet.")
-
-                            t.Commit()
-
-                        except Exception as e:
-                            print("Failed to place view {} on sheet {}: {}".format(new_view.Name, sheet_name, str(e)))
-
-                            # Record the end time and runtime
-                            end_time = time.time()
-                            runtime = end_time - start_time
-
-                            # Log the error details
-                            error_occured = ("Failed to place view {} on sheet {}: {}".format(new_view.Name, sheet_name, str(e)))
-                            run_result = "Error"
-                            element_count = 10
-
-                            # Function to log run data in case of error
-                            get_run_data(__title__, runtime, element_count, manual_time, run_result, error_occured)
-                            
-                            
+                a_value = excel_worksheet.cell_value(0, 0)  
+                if a_value:
+                    a_parameter = sheet.LookupParameter(a_value)
+                    if a_parameter and a_parameter.StorageType == StorageType.String:
+                        a_parameter.Set(col_a)
                     else:
-                            skipped_views.append((sheet.SheetNumber, sheet.Name) )
+                        print("No parameter found for {}".format(a_value))
+
+
+                b_value = excel_worksheet.cell_value(0, 1).strip()
+                if b_value:
+                    b_parameter = sheet.LookupParameter(b_value)
+                    if b_parameter and b_parameter.StorageType == StorageType.String:
+                        b_parameter.Set(col_b)
+                    else:
+                        print("No parameter found for {}".format(b_value))
+
+                c_value = excel_worksheet.cell_value(0, 2).strip()
+                if c_value:
+                    c_parameter = sheet.LookupParameter(c_value)
+                    if c_parameter and c_parameter.StorageType == StorageType.String:
+                        c_parameter.Set(col_c)
+                    else:
+                        print("No parameter found for {}".format(c_value))
 
 
 
-
-    tg.Assimilate()
-
-    # Record the end time
-    end_time = time.time()
-    runtime = end_time - start_time
-
-    run_result = "Tool ran successfully"
-    element_count = counter if counter else 0
-    error_occured = "Nil"
-    get_run_data(__title__, runtime, element_count, manual_time, run_result, error_occured)
-
-    if templates_to_create or level_mismatch or new_names or skipped_views:
-        output.print_md(header_data)
+                d_value = excel_worksheet.cell_value(0, 3).strip()
+                if d_value:
+                    d_parameter = sheet.LookupParameter(d_value)
+                    if d_parameter and d_parameter.StorageType == StorageType.String:
+                        d_parameter.Set(col_d)
+                    else:
+                        print("No parameter found for {}".format(d_value))
 
 
+                e_value = excel_worksheet.cell_value(0, 4).strip()
+                if e_value:
+                    e_parameter = sheet.LookupParameter(e_value)
+                    if e_parameter and e_parameter.StorageType == StorageType.String:
+                        e_parameter.Set(col_e)
+                    else:
+                        print("No parameter found for {}".format(e_value))
 
-except Exception as e:
-    print("Error occurred: {}".format(str(e)))
 
-    # Record the end time and runtime
-    end_time = time.time()
-    runtime = end_time - start_time
+                f_value = excel_worksheet.cell_value(0, 5).strip()
+                if f_value:
+                    f_parameter = sheet.LookupParameter(f_value)
+                    if f_parameter and f_parameter.StorageType == StorageType.String:
+                        f_parameter.Set(col_f)
+                    else:
+                        print("No parameter found for {}".format(f_value))
 
-    # Log the error details
-    error_occured = "Error occurred: {}".format(str(e))
-    run_result = "Error"
-    element_count = 10
 
-    # Function to log run data in case of error
-    get_run_data(__title__, runtime, element_count, manual_time, run_result, error_occured)
+                g_value = excel_worksheet.cell_value(0, 6).strip()
+                if g_value:
+    
+                    g_parameter = sheet.LookupParameter(g_value)
+
+                    if g_parameter and g_parameter.StorageType == StorageType.String:
+                        g_parameter.Set(col_g)
+                    else:
+                        print("No parameter found for {}".format(g_value))
+
+
+                h_value = excel_worksheet.cell_value(0, 7).strip()
+                if h_value:
+                    h_parameter = sheet.LookupParameter(h_value)
+                    if h_parameter and h_parameter.StorageType == StorageType.String:
+                        h_parameter.Set(col_h)
+                    else:
+                        print("No parameter found for {}".format(h_value))
+
+
+
+                i_value = excel_worksheet.cell_value(0, 8).strip()
+                if i_value:
+                    i_parameter = sheet.LookupParameter(i_value)
+                    if i_parameter and i_parameter.StorageType == StorageType.String:
+                        i_parameter.Set(col_i)
+                    else:
+                        print("No parameter found for {}".format(i_value))
+
+                drawn_parameter = sheet.LookupParameter("Drawn By")
+                if drawn_parameter and drawn_parameter.StorageType == StorageType.String:
+                    drawn_parameter.Set(col_q)
+                designed_parameter = sheet.LookupParameter("Designed By")
+                if designed_parameter and designed_parameter.StorageType == StorageType.String:
+                    designed_parameter.Set(col_r)
+                checked_parameter = sheet.LookupParameter("Checked By")
+                if checked_parameter and checked_parameter.StorageType == StorageType.String:
+                    checked_parameter.Set(col_s)
+                approved_parameter = sheet.LookupParameter("Approved By")
+                if approved_parameter and approved_parameter.StorageType == StorageType.String:
+                    approved_parameter.Set(col_t)
+
+                existing_sheets.add(sheet.Name)
+
+            t.Commit()
+
+            # Position the view on the sheet
+            title_block_bb = selected_title_block_type.get_BoundingBox(None)
+            sheet_center = XYZ((title_block_bb.Max.X + title_block_bb.Min.X) / 2- 0.18209,(title_block_bb.Max.Y + title_block_bb.Min.Y) / 2, 0)
+            
+            if sheet:
+
+                # Check if the sheet already has views placed on it
+                viewport_collector = FilteredElementCollector(doc, sheet.Id).OfClass(Viewport)
+                if viewport_collector.GetElementCount() == 0:
+                    try:
+                        t=Transaction(doc, "place views")
+                        t.Start()
+                        Viewport.Create(doc, sheet.Id, new_view.Id, sheet_center)
+
+                        tb_center = (title_block_bb.Min + title_block_bb.Max) / 2
+
+                        # Get the viewport on the sheet
+                        viewports = list(FilteredElementCollector(doc, sheet.Id).OfCategory(BuiltInCategory.OST_Viewports))
+                        if not viewports:
+                            print("No viewport found on the sheet.")
+
+                        t.Commit()
+
+                    except Exception as e:
+                        print("Failed to place view {} on sheet {}: {}".format(new_view.Name, sheet_name, str(e)))
+
+                        # Record the end time and runtime
+                        end_time = time.time()
+                        runtime = end_time - start_time
+
+                        # Log the error details
+                        error_occured = ("Failed to place view {} on sheet {}: {}".format(new_view.Name, sheet_name, str(e)))
+                        run_result = "Error"
+                        element_count = 10
+
+                        # Function to log run data in case of error
+                        get_run_data(__title__, runtime, element_count, manual_time, run_result, error_occured)
+                        
+                        
+                else:
+                        skipped_views.append((sheet.SheetNumber, sheet.Name) )
+
+    # Create a view name using the level information
+    else:
+        if matching_level:
+            t = Transaction(doc, "create plans")
+            t.Start()
+
+            level = matching_level[0]
+            view_name = "{}_{}".format(col_l,level.Name)
+            # Check if a view with the same name exists and meets the criteria
+
+            new_view = None
+            unique_view_name = view_name
+
+
+            if new_view is None:
+                counter = 1
+                while unique_view_name in existing_view_names:
+                    unique_view_name = "{}_{}".format(view_name, counter)
+                    counter += 1
+
+                # Create the floor plan view and set name
+                new_view = ViewPlan.Create(doc, floor_plan_type.Id, level.Id)
+                new_view.Name = unique_view_name
+                existing_view_names.add(new_view.Name)
+
+            # Assign the view template
+            if matching_template:
+                new_view.ViewTemplateId = matching_template.Id
+
+            if col_p:
+                scope_boxes = FilteredElementCollector(doc).OfCategory(BuiltInCategory.OST_VolumeOfInterest).ToElements()
+                scope_box = None
+                for sb in scope_boxes:
+                    sb_name = sb.Name
+                    if sb_name == (col_p):
+                        scope_box = sb
+                        break
+
+                if scope_box is not None:      
+                    new_view.get_Parameter(BuiltInParameter.VIEWER_VOLUME_OF_INTEREST_CROP).Set(scope_box.Id)
+            else:
+                scope_box_param = new_view.get_Parameter(BuiltInParameter.VIEWER_VOLUME_OF_INTEREST_CROP)
+                if scope_box_param:
+                    scope_box_param.Set(None)  # Remove scope box
+
+            # Place the view on the corresponding sheet
+            sheet_name = col_k
+            sheet_number = col_j
+
+
+            # Check if there’s an existing sheet with the same number but a different discipline
+            conflicting_sheet = next((s for s in FilteredElementCollector(doc).OfClass(ViewSheet)
+                                    if s.SheetNumber == sheet_number and 
+                                    s.LookupParameter("Sub-Discipline").AsString() != selected_discipline), None)
+
+            if conflicting_sheet:
+                t.RollBack()
+                TaskDialog.Show("Error", "A sheet with the same sheet number exists under a different discipline. Please use a unique sheet number or discipline.")
+                script.exit()
+
+            else:
+
+                existing_sheet = next((s for s in FilteredElementCollector(doc).OfClass(ViewSheet)
+                            if s.Name == sheet_name and s.SheetNumber == sheet_number and s.LookupParameter("Sub-Discipline").AsString() == selected_discipline), None)
+
+                if existing_sheet:
+                    sheet = existing_sheet
+
+                else:
+                    # Create a new sheet if it doesn't exist
+                    sheet = ViewSheet.Create(doc, selected_title_block_type.Id)
+                    sheet.Name = sheet_name
+                    sheet.SheetNumber = sheet_number
+                    existing_sheets.add(sheet_name)
+                    if new_view:
+                        new_names.append((new_view.Name, sheet.Name))
+
+
+                # Set sheet parameters if available
+                folder_parameter = sheet.LookupParameter("Folder")
+                if folder_parameter and folder_parameter.StorageType == StorageType.String:
+                    folder_parameter.Set("Floor Plan")
+                subdiscipline_parameter = sheet.LookupParameter("Sub-Discipline")
+                if subdiscipline_parameter and folder_parameter.StorageType == StorageType.String:
+                    subdiscipline_parameter.Set(selected_discipline)
+
+                a_value = excel_worksheet.cell_value(0, 0)  
+                if a_value:
+                    a_parameter = sheet.LookupParameter(a_value)
+                    if a_parameter and a_parameter.StorageType == StorageType.String:
+                        a_parameter.Set(col_a)
+                    else:
+                        print("No parameter found for {}".format(a_value))
+
+
+                b_value = excel_worksheet.cell_value(0, 1).strip()
+                if b_value:
+                    b_parameter = sheet.LookupParameter(b_value)
+                    if b_parameter and b_parameter.StorageType == StorageType.String:
+                        b_parameter.Set(col_b)
+                    else:
+                        print("No parameter found for {}".format(b_value))
+
+                c_value = excel_worksheet.cell_value(0, 2).strip()
+                if c_value:
+                    c_parameter = sheet.LookupParameter(c_value)
+                    if c_parameter and c_parameter.StorageType == StorageType.String:
+                        c_parameter.Set(col_c)
+                    else:
+                        print("No parameter found for {}".format(c_value))
+
+
+
+                d_value = excel_worksheet.cell_value(0, 3).strip()
+                if d_value:
+                    d_parameter = sheet.LookupParameter(d_value)
+                    if d_parameter and d_parameter.StorageType == StorageType.String:
+                        d_parameter.Set(col_d)
+                    else:
+                        print("No parameter found for {}".format(d_value))
+
+
+                e_value = excel_worksheet.cell_value(0, 4).strip()
+                if e_value:
+                    e_parameter = sheet.LookupParameter(e_value)
+                    if e_parameter and e_parameter.StorageType == StorageType.String:
+                        e_parameter.Set(col_e)
+                    else:
+                        print("No parameter found for {}".format(e_value))
+
+
+                f_value = excel_worksheet.cell_value(0, 5).strip()
+                if f_value:
+                    f_parameter = sheet.LookupParameter(f_value)
+                    if f_parameter and f_parameter.StorageType == StorageType.String:
+                        f_parameter.Set(col_f)
+                    else:
+                        print("No parameter found for {}".format(f_value))
+
+
+                g_value = excel_worksheet.cell_value(0, 6).strip()
+                if g_value:
+    
+                    g_parameter = sheet.LookupParameter(g_value)
+
+                    if g_parameter and g_parameter.StorageType == StorageType.String:
+                        g_parameter.Set(col_g)
+                    else:
+                        print("No parameter found for {}".format(g_value))
+
+
+                h_value = excel_worksheet.cell_value(0, 7).strip()
+                if h_value:
+                    h_parameter = sheet.LookupParameter(h_value)
+                    if h_parameter and h_parameter.StorageType == StorageType.String:
+                        h_parameter.Set(col_h)
+                    else:
+                        print("No parameter found for {}".format(h_value))
+
+
+
+                i_value = excel_worksheet.cell_value(0, 8).strip()
+                if i_value:
+                    i_parameter = sheet.LookupParameter(i_value)
+                    if i_parameter and i_parameter.StorageType == StorageType.String:
+                        i_parameter.Set(col_i)
+                    else:
+                        print("No parameter found for {}".format(i_value))
+
+                drawn_parameter = sheet.LookupParameter("Drawn By")
+                if drawn_parameter and drawn_parameter.StorageType == StorageType.String:
+                    drawn_parameter.Set(col_q)
+                designed_parameter = sheet.LookupParameter("Designed By")
+                if designed_parameter and designed_parameter.StorageType == StorageType.String:
+                    designed_parameter.Set(col_r)
+                checked_parameter = sheet.LookupParameter("Checked By")
+                if checked_parameter and checked_parameter.StorageType == StorageType.String:
+                    checked_parameter.Set(col_s)
+                approved_parameter = sheet.LookupParameter("Approved By")
+                if approved_parameter and approved_parameter.StorageType == StorageType.String:
+                    approved_parameter.Set(col_t)
+
+                existing_sheets.add(sheet.Name)
+
+            t.Commit()
+
+            # Position the view on the sheet
+            title_block_bb = selected_title_block_type.get_BoundingBox(None)
+            sheet_center = XYZ((title_block_bb.Max.X + title_block_bb.Min.X) / 2- 0.18209,(title_block_bb.Max.Y + title_block_bb.Min.Y) / 2, 0)
+            
+            if sheet:
+
+                # Check if the sheet already has views placed on it
+                viewport_collector = FilteredElementCollector(doc, sheet.Id).OfClass(Viewport)
+                if viewport_collector.GetElementCount() == 0:
+                    try:
+                        t=Transaction(doc, "place views")
+                        t.Start()
+                        Viewport.Create(doc, sheet.Id, new_view.Id, sheet_center)
+
+                        tb_center = (title_block_bb.Min + title_block_bb.Max) / 2
+
+                        # Get the viewport on the sheet
+                        viewports = list(FilteredElementCollector(doc, sheet.Id).OfCategory(BuiltInCategory.OST_Viewports))
+                        if not viewports:
+                            print("No viewport found on the sheet.")
+
+                        t.Commit()
+
+                    except Exception as e:
+                        print("Failed to place view {} on sheet {}: {}".format(new_view.Name, sheet_name, str(e)))
+
+                        # Record the end time and runtime
+                        end_time = time.time()
+                        runtime = end_time - start_time
+
+                        # Log the error details
+                        error_occured = ("Failed to place view {} on sheet {}: {}".format(new_view.Name, sheet_name, str(e)))
+                        run_result = "Error"
+                        element_count = 10
+
+                        # Function to log run data in case of error
+                        get_run_data(__title__, runtime, element_count, manual_time, run_result, error_occured)
+                        
+                        
+                else:
+                        skipped_views.append((sheet.SheetNumber, sheet.Name) )
+
+
+new_sheet_created = []
+for row in range(1, excel_worksheet.nrows):
+    col_j = str(excel_worksheet.cell_value(row,  9)).strip()  #SHEET NUMBE
+    col_k = str(excel_worksheet.cell_value(row, 10)).strip()  #SHEET NAME
+
+
+
+    if col_j:
+        t = Transaction(doc, "Create sheets")
+        t.Start()
+
+
+        # Place the view on the corresponding sheet
+        sheet_name = col_k
+        sheet_number = col_j
+
+
+        # Check if there’s an existing sheet with the same number but a different discipline
+        conflicting_sheet = next((s for s in FilteredElementCollector(doc).OfClass(ViewSheet)
+                                if s.SheetNumber == sheet_number and 
+                                s.LookupParameter("Sub-Discipline").AsString() != selected_discipline), None)
+
+        if conflicting_sheet:
+            t.RollBack()
+            TaskDialog.Show("Error", "A sheet with the same sheet number exists under a different discipline. Please use a unique sheet number or discipline.")
+            script.exit()
+
+        else:
+
+            existing_sheet = next((s for s in FilteredElementCollector(doc).OfClass(ViewSheet)
+                        if s.Name == sheet_name and s.SheetNumber == sheet_number and s.LookupParameter("Sub-Discipline").AsString() == selected_discipline), None)
+
+            if existing_sheet:
+                sheet = existing_sheet
+
+            else:
+                # Create a new sheet if it doesn't exist
+                sheet = ViewSheet.Create(doc, selected_title_block_type.Id)
+                sheet.Name = sheet_name
+                sheet.SheetNumber = sheet_number
+                existing_sheets.add(sheet_name)
+
+            # Set sheet parameters if available
+            subdiscipline_parameter = sheet.LookupParameter("Sub-Discipline")
+            if subdiscipline_parameter and subdiscipline_parameter.StorageType == StorageType.String:
+                subdiscipline_parameter.Set(selected_discipline)
+
+            a_value = excel_worksheet.cell_value(0, 0)  
+            if a_value:
+                a_parameter = sheet.LookupParameter(a_value)
+                if a_parameter and a_parameter.StorageType == StorageType.String:
+                    a_parameter.Set(col_a)
+                else:
+                    print("No parameter found for {}".format(a_value))
+
+
+            b_value = excel_worksheet.cell_value(0, 1).strip()
+            if b_value:
+                b_parameter = sheet.LookupParameter(b_value)
+                if b_parameter and b_parameter.StorageType == StorageType.String:
+                    b_parameter.Set(col_b)
+                else:
+                    print("No parameter found for {}".format(b_value))
+
+            c_value = excel_worksheet.cell_value(0, 2).strip()
+            if c_value:
+                c_parameter = sheet.LookupParameter(c_value)
+                if c_parameter and c_parameter.StorageType == StorageType.String:
+                    c_parameter.Set(col_c)
+                else:
+                    print("No parameter found for {}".format(c_value))
+
+
+
+            d_value = excel_worksheet.cell_value(0, 3).strip()
+            if d_value:
+                d_parameter = sheet.LookupParameter(d_value)
+                if d_parameter and d_parameter.StorageType == StorageType.String:
+                    d_parameter.Set(col_d)
+                else:
+                    print("No parameter found for {}".format(d_value))
+
+
+            e_value = excel_worksheet.cell_value(0, 4).strip()
+            if e_value:
+                e_parameter = sheet.LookupParameter(e_value)
+                if e_parameter and e_parameter.StorageType == StorageType.String:
+                    e_parameter.Set(col_e)
+                else:
+                    print("No parameter found for {}".format(e_value))
+
+
+            f_value = excel_worksheet.cell_value(0, 5).strip()
+            if f_value:
+                f_parameter = sheet.LookupParameter(f_value)
+                if f_parameter and f_parameter.StorageType == StorageType.String:
+                    f_parameter.Set(col_f)
+                else:
+                    print("No parameter found for {}".format(f_value))
+
+
+            g_value = excel_worksheet.cell_value(0, 6).strip()
+            if g_value:
+
+                g_parameter = sheet.LookupParameter(g_value)
+
+                if g_parameter and g_parameter.StorageType == StorageType.String:
+                    g_parameter.Set(col_g)
+                else:
+                    print("No parameter found for {}".format(g_value))
+
+
+            h_value = excel_worksheet.cell_value(0, 7).strip()
+            if h_value:
+                h_parameter = sheet.LookupParameter(h_value)
+                if h_parameter and h_parameter.StorageType == StorageType.String:
+                    h_parameter.Set(col_h)
+                else:
+                    print("No parameter found for {}".format(h_value))
+
+
+
+            i_value = excel_worksheet.cell_value(0, 8).strip()
+            if i_value:
+                i_parameter = sheet.LookupParameter(i_value)
+                if i_parameter and i_parameter.StorageType == StorageType.String:
+                    i_parameter.Set(col_i)
+                else:
+                    print("No parameter found for {}".format(i_value))
+
+            drawn_parameter = sheet.LookupParameter("Drawn By")
+            if drawn_parameter and drawn_parameter.StorageType == StorageType.String:
+                drawn_parameter.Set(col_q)
+            designed_parameter = sheet.LookupParameter("Designed By")
+            if designed_parameter and designed_parameter.StorageType == StorageType.String:
+                designed_parameter.Set(col_r)
+            checked_parameter = sheet.LookupParameter("Checked By")
+            if checked_parameter and checked_parameter.StorageType == StorageType.String:
+                checked_parameter.Set(col_s)
+            approved_parameter = sheet.LookupParameter("Approved By")
+            if approved_parameter and approved_parameter.StorageType == StorageType.String:
+                approved_parameter.Set(col_t)
+
+
+            existing_sheets.add(sheet.Name)
+
+        t.Commit()
+
+tg.Assimilate()
+
+# Record the end time
+end_time = time.time()
+runtime = end_time - start_time
+
+run_result = "Tool ran successfully"
+element_count = counter if counter else 0
+error_occured = "Nil"
+get_run_data(__title__, runtime, element_count, manual_time, run_result, error_occured)
+
+if templates_to_create or level_mismatch or new_names or skipped_views:
+    output.print_md(header_data)
+
 
 if skipped_views:
     output.print_md("## ⚠️ Skipping View Placement")  # Markdown Heading 2 
@@ -1293,7 +1970,7 @@ if templates_to_create:
     output.print_md("---")  # Markdown Line Break
     output.print_md("❌ Views skipped due to missing templates.")  # Print a Line
     # Create a table to display the skipped views
-    output.print_table(table_data=templates_to_create, columns=["EXCEL LEVEL NAME", "COMMENT"])  # Print a Table
+    output.print_table(table_data=templates_to_create, columns=["MISSING TEMPLATE", "COMMENT"])  # Print a Table
 
 
 if level_mismatch is not None and level in level_mismatch:

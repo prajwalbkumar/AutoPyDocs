@@ -34,7 +34,7 @@ def isParallel(v1, v2):
     cross_product = v1.CrossProduct(v2)
     return cross_product.IsAlmostEqualTo(XYZ(0, 0, 0))
 
-def isCollinear(l0, l1):
+def isCollinear(l0, l1, tolerance=1e-9):
     a = l0.GetEndPoint(0)
     b = l0.GetEndPoint(1)
     c = l1.GetEndPoint(0)
@@ -50,32 +50,128 @@ def isCollinear(l0, l1):
         return False
 
     # Check if the lines lie on the same infinite line
-    return v0.CrossProduct(v2).IsAlmostEqualTo(XYZ(0, 0, 0))
+    return v0.CrossProduct(v2).IsAlmostEqualTo(XYZ(0, 0, 0), tolerance)
 
-def normal_line(s, offset_distance):
-    s_factor = view.Scale
-    s_line = s.GetCurve()
-    if isinstance(s_line, Arc):
+def is_almost_equal(value1, value2, tolerance=1e-9):
+    return abs(value1 - value2) < tolerance
+
+def normal_line(seg, offset_distance):
+    scale_factor = view.Scale
+    segment_line = seg.GetCurve()
+
+    if isinstance(segment_line, Arc):
         room_issue_counts[room_key]["CurvedBoundaryCount"] += 1
         return None
-    elif isinstance(s_line, Line):
-        s_direction = s_line.Direction
-        # Calculate the normal vector
-        normal_vector = XYZ(-s_direction.Y, s_direction.X, 0) * s_line.Length
-        #print(l.Length)
-        o_factor = (s_line.Length)/offset_distance
-        o_direction = (s_line.GetEndPoint(1) - s_line.GetEndPoint(0))/o_factor
-        pt2 = s_line.GetEndPoint(0) + o_direction * s_factor/100
+    elif isinstance(segment_line, Line):
+        seg1_pt1 = segment_line.GetEndPoint(0)
+        seg1_pt2 = segment_line.GetEndPoint(1)
+
+        if is_almost_equal(seg1_pt1.X, seg1_pt2.X, tolerance=1e-9):
+            if seg1_pt1.Y > seg1_pt2.Y:
+                s_direction  = seg1_pt1 - seg1_pt2
+                first_pt = seg1_pt1 
+            else:
+                s_direction  = seg1_pt2 - seg1_pt1
+                first_pt = seg1_pt2 
+        elif seg1_pt1.X > seg1_pt2.X:
+            s_direction  = seg1_pt1 - seg1_pt2
+            first_pt = seg1_pt1 
+        else:
+            s_direction  = seg1_pt2 - seg1_pt1
+            first_pt = seg1_pt2 
+    
         # Create a line from the midpoint in the direction of the normal vector
-        nl = Line.CreateBound(pt2, normal_vector + pt2)
+        direction = s_direction.Normalize()
+        normal_vector = XYZ(-direction.Y, direction.X, 0) * 0.25
+        o_direction = (direction * offset_distance) * scale_factor / 100
+
+        pt1 = first_pt - o_direction 
+        pt2 = normal_vector + pt1
+        if room.IsPointInRoom(pt2):
+            nl = Line.CreateBound(pt1, pt2)
+        else:
+            nl = Line.CreateBound(pt1, pt1 - normal_vector)
         return nl
+
     else:
         room_issue_counts[room_key]["InvalidReference"] += 1
         return None
 
-def segment_reference(s):
+def cs_normal_line(room, seg, offset_distance, cs=None):    
+    scale_factor = view.Scale
+    if cs and len(cs) > 1:
+        #print("cs found")
+        seg1_pt1 = cs[0].GetCurve().GetEndPoint(0)
+        seg1_pt2 = cs[0].GetCurve().GetEndPoint(1)
+        seg2_pt1 = cs[-1].GetCurve().GetEndPoint(0)
+        seg2_pt2 = cs[-1].GetCurve().GetEndPoint(1)
+
+        points_list = [seg1_pt1, seg1_pt2, seg2_pt1, seg2_pt2]
+        sorted_points = sorted(points_list, key=lambda point: (point[0], point[1]))
+        # if seg1_pt1.X == seg1_pt2.X:
+        #     sorted_points = sorted(points_list, key=lambda point: (point[1], point[0]), reverse=True)
+        # elif seg1_pt1.Y == seg1_pt2.Y:
+        #     sorted_points = sorted(points_list, key=lambda point: (point[0], point[1]))
+        # else:
+        #     sorted_points = sorted(points_list, key=lambda point: (point[0], point[1]))
+
+        start_pt_index = points_list.index(sorted_points[0])
+        end_pt_index = points_list.index(sorted_points[-1])
+        s_line_start_pt = points_list[start_pt_index]
+        s_line_end_pt = points_list[end_pt_index]
+
+        #print(s_line_start_pt)
+        #print(s_line_end_pt)
+        #print(s_line_start_pt>s_line_end_pt)
+        if s_line_start_pt > s_line_end_pt:
+            s_direction = s_line_start_pt - s_line_end_pt 
+            first_pt = s_line_start_pt
+        else:
+            s_direction = s_line_end_pt - s_line_start_pt
+            first_pt = s_line_end_pt
+        s_length = s_direction.GetLength()
+        if s_length == 0:
+            print("Warning: Collinear set has zero length. Check the start and end points.")
+            return None
+
+    else:
+        segment_line = seg.GetCurve()
+        if isinstance(segment_line, Arc):
+            #room_issue_counts[room_key]["CurvedBoundaryCount"] += 1
+            return None
+        elif isinstance(segment_line, Line):
+            #s_direction = segment_line.Direction
+            s_length = segment_line.Length
+            s_line_start_pt = segment_line.GetEndPoint(0)   
+            s_line_end_pt = segment_line.GetEndPoint(1)
+            if s_line_start_pt > s_line_end_pt:
+                s_direction = s_line_start_pt - s_line_end_pt 
+                first_pt = s_line_start_pt
+            else:
+                s_direction = s_line_end_pt - s_line_start_pt
+                first_pt = s_line_end_pt
+            
+        else:
+            #room_issue_counts[room_key]["InvalidReference"] += 1
+            return None
+
+    direction = s_direction.Normalize()
+    normal_vector = XYZ(-direction.Y, direction.X, 0) * 0.25
+    o_direction = (direction * offset_distance) * scale_factor / 100
+    
+    pt1 = first_pt - o_direction 
+    pt2 = normal_vector + pt1
+
+    if room.IsPointInRoom(pt2):
+    # Create a line from the midpoint in the direction of the normal vector
+        nl = Line.CreateBound(pt1, pt2)
+    else:
+        nl = Line.CreateBound(pt1, pt1 - normal_vector)
+    return nl
+
+def segment_reference(seg, link_instance = None):
     if 'Current Model' in doc_opted:
-        se = doc.GetElement(s.ElementId)
+        se = doc.GetElement(seg.ElementId)
         
         # If the element is a model line (room separator)
         if isinstance(se, ModelLine):
@@ -94,9 +190,9 @@ def segment_reference(s):
             fInt = elemInt.GetGeometryObjectFromReference(rInt)
             
             # Check if the curve intersects with the faces
-            if isinstance(fExt, Face) and fExt.Intersect(s.GetCurve()) in [SetComparisonResult.Overlap, SetComparisonResult.Subset]:
+            if isinstance(fExt, Face) and fExt.Intersect(seg.GetCurve()) in [SetComparisonResult.Overlap, SetComparisonResult.Subset]:
                 return rExt
-            if isinstance(fInt, Face) and fInt.Intersect(s.GetCurve()) in [SetComparisonResult.Overlap, SetComparisonResult.Subset]:
+            if isinstance(fInt, Face) and fInt.Intersect(seg.GetCurve()) in [SetComparisonResult.Overlap, SetComparisonResult.Subset]:
                 return rInt
             
             # If the element is a curtain wall
@@ -110,8 +206,9 @@ def segment_reference(s):
                 return ref
             
     if 'Link' in doc_opted:  
-        se = link_doc.GetElement(s.ElementId)
-        #print(s.ElementId)
+        link_doc = link_instance.GetLinkDocument()
+        se = link_doc.GetElement(seg.ElementId)
+        #print(seg.ElementId)
         # If the element is a model line (room separator)
         if isinstance(se, ModelLine):
             return se.GeometryCurve.Reference.CreateLinkReference(link_instance)
@@ -137,9 +234,9 @@ def segment_reference(s):
             #print(fExt)
 
             # Check if the curve intersects with the faces
-            if isinstance(fExt, Face) and fExt.Intersect(s.GetCurve()) in [SetComparisonResult.Overlap, SetComparisonResult.Subset]:
+            if isinstance(fExt, Face) and fExt.Intersect(seg.GetCurve()) in [SetComparisonResult.Overlap, SetComparisonResult.Subset]:
                 return rExt_linked
-            if isinstance(fInt, Face) and fInt.Intersect(s.GetCurve()) in [SetComparisonResult.Overlap, SetComparisonResult.Subset]:
+            if isinstance(fInt, Face) and fInt.Intersect(seg.GetCurve()) in [SetComparisonResult.Overlap, SetComparisonResult.Subset]:
                 return rInt_linked
 
 
@@ -160,23 +257,8 @@ def model_rooms(doc):
         model_rooms = FilteredElementCollector(doc).OfCategory(BuiltInCategory.OST_Rooms)
         rooms.extend(model_rooms)
     if 'Link' in doc_opted:
-        linked_instances = FilteredElementCollector(doc).OfClass(RevitLinkInstance).ToElements()
-        if not linked_instances:
-            forms.alert("No linked document", exitscript=True)
-
-        link_names = [link.Name for link in linked_instances]
-
-        target_instance_names = forms.SelectFromList.show(link_names, title="Select Target File", width=600, height=600, button_name="Select File", multiselect=True, exitscript = True)
-
-        if not target_instance_names:
-            script.exit()
-
-        for link_instance in linked_instances:
-            if link_instance.Name in target_instance_names:    
-                link_doc = link_instance.GetLinkDocument()  
-                transform = link_instance.GetTotalTransform()  
-                linked_rooms = FilteredElementCollector(link_doc).OfCategory(BuiltInCategory.OST_Rooms)
-                rooms.extend(linked_rooms)
+        linked_rooms = FilteredElementCollector(link_doc).OfCategory(BuiltInCategory.OST_Rooms)
+        rooms.extend(linked_rooms)
 
     rooms_in_view = list(rooms)
     #print(rooms_in_view)
@@ -190,21 +272,21 @@ def view_rooms(view):
         model_rooms = FilteredElementCollector(doc, view.Id).OfCategory(BuiltInCategory.OST_Rooms)
         rooms.extend(model_rooms)
     if 'Link' in doc_opted:
-        linked_instances = FilteredElementCollector(doc, view.Id).OfClass(RevitLinkInstance).ToElements()
-        if not linked_instances:
-            forms.alert("No linked document", exitscript=True)
+        # linked_instances = FilteredElementCollector(doc, view.Id).OfClass(RevitLinkInstance).ToElements()
+        # # if not linked_instances:
+        # #     forms.alert("No linked document", exitscript=True)
 
-        link_names = [link.Name for link in linked_instances]
+        # # link_names = [link.Name for link in linked_instances]
 
-        target_instance_names = forms.SelectFromList.show(link_names, title="Select Target File", width=600, height=600, button_name="Select File", multiselect=True, exitscript = True)
+        # #target_instance_names = forms.SelectFromList.show(link_names, title="Select Target File", width=600, height=600, button_name="Select File", multiselect=True, exitscript = True)
 
-        if not target_instance_names:
-            script.exit()
+        # # if not target_instance_names:
+        # #     script.exit()
 
-        for link_instance in linked_instances:
-            if link_instance.Name in target_instance_names:    
-                link_doc = link_instance.GetLinkDocument()  
-                transform = link_instance.GetTotalTransform()  
+        # for link_instance in linked_instances:
+        #     if link_instance.Name in target_instance_names:    
+        #         link_doc = link_instance.GetLinkDocument()  
+        #         transform = link_instance.GetTotalTransform()  
                 linked_rooms = FilteredElementCollector(link_doc, view.Id).OfCategory(BuiltInCategory.OST_Rooms)
                 rooms.extend(linked_rooms)
 
@@ -245,6 +327,11 @@ def ensure_view_is_cropped(view):
         if not view.CropBoxActive:
             view.CropBoxActive = True
 
+def swap_collinear_segments(collinear_sets):
+    for cs in collinear_sets:
+        if len(cs) > 1:
+            cs[0], cs[-1] = cs[-1], cs[0]
+
 doc_ops = ['Current Model', 'Link']
 doc_opted = forms.SelectFromList.show(doc_ops,
                                       title='Rooms are in:',
@@ -254,6 +341,31 @@ doc_opted = forms.SelectFromList.show(doc_ops,
 
 if not doc_opted:
     forms.alert ("Model type not selected", exitscript = True)
+
+def select_link_doc(doc):
+    if 'Link' in doc_opted:
+        linked_instances = FilteredElementCollector(doc).OfClass(RevitLinkInstance).ToElements()
+        if not linked_instances:
+            forms.alert("No linked document", exitscript=True)
+
+        link_names = [link.Name for link in linked_instances]
+
+        target_instance_names = forms.SelectFromList.show(link_names, title="Select File with Rooms", width=600, height=600, button_name="Select File", multiselect=False, exitscript = True)
+
+        if not target_instance_names:
+            script.exit()
+        
+        for link_instance in linked_instances:
+            if link_instance.Name in target_instance_names:    
+                link_doc = link_instance.GetLinkDocument()  
+                transform = link_instance.GetTotalTransform() 
+                selected_link = link_instance
+
+        return selected_link, link_doc
+    else:
+        return None
+
+selected_link, link_doc = select_link_doc(doc)
 
 dim_ops = ['Length & Width only', 'Least width', 'All wall segments' ]
 dim_opted = forms.SelectFromList.show(dim_ops,
@@ -284,10 +396,8 @@ selected_rooms = selected_model_rooms(doc)
 
 sel_room_ids = []
 for room in selected_rooms:
-    print(room)
     room_id = room.Id
     sel_room_ids.append(room_id)
-#print(sel_room_ids)
  
 try:
     t = Transaction(doc, "Dimension Room")
@@ -356,9 +466,11 @@ try:
                             segment_groups.append(new_group)
 
                     for i, group in enumerate(segment_groups):
-                        #print("Group{} : {}".format(i, len(group)))
+                        csets = [] 
+                        segment_list = []
+                        length_dir = {}
                         if len(group) >= 2: 
-                            csets = [] 
+                            #print("Group{} : {}".format(i, len(group)))
                             for segment in group:
                                 for cs in csets:
                                     if len(cs) > 0:
@@ -371,57 +483,94 @@ try:
                                 else:
                                     # No collinear group found, so create a new one
                                     csets.append([segment])
-                            segment_list = []
-                            #print(csets)
-                            #print("Cset length: {}".format(len(csets)))
-                            
+
                             for cs in csets:
                                 #print (cs)
                                 #print("Set length: {}".format(len(cs)))
-                                segment_list.append(cs[0])
-                            
-                            #print(segment_list)
-                            #print("Segment list length: {}".format(len(segment_list)))
+                                if len(cs) > 1:
+                                    #print("cs")
+                                    total_length = sum(seg.GetCurve().Length for seg in cs)
+                                    length_dir[cs[0]] = total_length
+                                    # for seg in cs:
+                                    #     doc.Create.NewDetailCurve(view, seg.GetCurve())
+                                elif len(cs) == 1:
+                                    #print("seg")
+                                    for segment in cs:
+                                        length_dir[segment] = segment.GetCurve().Length
 
-                            sorted_dir = sorted(segment_list, key=lambda x: x.GetCurve().Length, reverse=True)
+                            sorted_length_dir = dict(sorted(length_dir.items(), key=lambda item: item[1]))
+                            #print(i, sorted_length_dir.items())
+
                             #Pair segments with the distance between them
                             set_pairs = []
-                            for i, s0 in enumerate(sorted_dir):
-                                #print(type(sorted_dir[0]))
-                                c0 = s0.GetCurve()    
-                                for s1 in sorted_dir[i+1:]:  
+                            
+                            for i, [s0, length0] in enumerate(sorted_length_dir.items()):
+                                c0 = s0.GetCurve()
+                                for [s1, length1] in list(sorted_length_dir.items())[i+1:]:
                                     c1 = s1.GetCurve()
-                                    d = c0.Distance(c1.GetEndPoint(0))  
+                                    d = c0.Distance(c1.GetEndPoint(0))
                                     set_pairs.append([d, s0, s1])
                             #print(set_pairs)
-                            
+
                             sorted_by_distance = sorted(set_pairs, key=lambda x: x[0], reverse=True)
+                        
                             #print(sorted_by_distance)
                             if sorted_by_distance:
                                 #print(dim_opted)
                                 #Add dimension to segments farthest apart
                                 if 'Length & Width only' in dim_opted:
-                                    #print(sorted_by_distance[0][0])
+
                                     first = sorted_by_distance[0][1]
                                     second = sorted_by_distance[0][2]
+                                    #print(selected_link)
                                     #print(type(first))
-                                    nl = normal_line(second, offset_distance)
-                                    if nl is not None:
-                                        #doc.Create.NewDetailCurve(view, nl)
-                                        refArray = ReferenceArray()
-                                        refArray.Append(segment_reference(first))  
-                                        refArray.Append(segment_reference(second)) 
-                                        if segment_reference(first) is None or segment_reference(second) is None:
-                                            room_issue_counts[room_key]["InvalidReference"] += 1
+                                    refArray = ReferenceArray() 
+                                    refArray.Append(segment_reference(first, selected_link))
+                                    refArray.Append(segment_reference(second, selected_link)) 
+                                    
+                                    length_first = sorted_length_dir[first]
+                                    length_second = sorted_length_dir[second]
+
+                                    first_cs = None
+                                    second_cs = None
+                                    for cs in csets:
+                                        if len(cs) > 1:
+                                            if first in cs:
+                                                first_cs = cs
+                                            if second in cs:
+                                                second_cs = cs
+
+                                    if length_first >= length_second:
+                                        #print("Length: {}".format(length_second))
+                                        
+                                        if second_cs and len(second_cs) > 1:
+                                            
+                                            #print("second_cs")
+                                            nl = cs_normal_line(room, second, offset_distance, second_cs)
                                         else:
-                                            #print(refArray.Size)
-                                            #print(segment_reference(first))
-                                            #print(segment_reference(second))
-                                            if refArray.Size>=2:
-                                                d1 = doc.Create.NewDimension(view, nl, refArray)
-                                                total_dim_count += 1
-                                            else:
-                                                room_issue_counts[room_key] += 1
+                                            nl = normal_line(second, offset_distance)
+                                    else:
+                                        #print("Length: {}".format(length_first))
+                                        if first_cs and len(first_cs) > 1:
+                                            
+                                            #print("first_cs")
+                                            nl = cs_normal_line(room, first, offset_distance, first_cs)
+                                        else:
+                                            nl = normal_line(first, offset_distance)
+                                    # if nl is not None:
+                                    #     doc.Create.NewDetailCurve(view, nl)
+                                        
+                                    if segment_reference(first, selected_link) is None or segment_reference(second, selected_link) is None:
+                                        room_issue_counts[room_key]["InvalidReference"] += 1
+                                    #else:
+                                        #print(refArray.Size)
+                                        #print(segment_reference(first))
+                                        #print(segment_reference(second))
+                                    if refArray.Size>=2:
+                                        d1 = doc.Create.NewDimension(view, nl, refArray)
+                                        total_dim_count += 1
+                                    else:
+                                        room_issue_counts[room_key] += 1
                                 
                                 #Add dimension to segments closest to each other
                                 if 'Least width' in dim_opted:
@@ -429,16 +578,18 @@ try:
                                         first_sg = sorted_by_distance[-1][1]
                                         second_sg = sorted_by_distance[-1][2]
                                         #print(type(first))
-                                        if first_sg.GetCurve().Length >= second_sg.GetCurve().Length: 
+                                        curve1 = first_sg.GetCurve()
+                                        curve2 = second_sg.GetCurve()
+                                        if curve1.Length >= curve2.Length: 
                                             nl2 = normal_line(second_sg, offset_distance)
                                         else:
                                             nl2 = normal_line(first_sg, offset_distance)
                                         if nl2 is not None:
                                             #doc.Create.NewDetailCurve(view, nl2)
                                             refArray2 = ReferenceArray()
-                                            refArray2.Append(segment_reference(first_sg))  
-                                            refArray2.Append(segment_reference(second_sg))
-                                            if segment_reference(first_sg) is None or segment_reference(second_sg) is None:
+                                            refArray2.Append(segment_reference(first_sg, selected_link))  
+                                            refArray2.Append(segment_reference(second_sg, selected_link))
+                                            if segment_reference(first_sg) is None or segment_reference(second_sg, selected_link) is None:
                                                 room_issue_counts[room_key]["InvalidReference"]+= 1
                                             else:
                                                 #print(refArray2.Size)
@@ -457,8 +608,8 @@ try:
                                             #nl3 = normal_line(sorted_dir[0], (offset_distance*2))
                                             #doc.Create.NewDetailCurve(view, nl3)
                                             refArray3 = ReferenceArray()
-                                            for sorted_segment in sorted_dir:
-                                                refArray3.Append(segment_reference(sorted_segment))
+                                            for sorted_segment in sorted_length_dir:
+                                                refArray3.Append(segment_reference(sorted_segment, selected_link))
                                             #print(refArray3.Size) 
                                             if segment_reference(sorted_segment) is None:
                                                 room_issue_counts[room_key]["InvalidReference"] += 1
@@ -476,8 +627,8 @@ try:
                             #forms.alert("Room needs to have atleast 2 parallel sides to make linear dimension")
                     total_room_count += 1
             else:
-                #room_number = room.LookupParameter("Number").AsString()
-                #print("Room {} not in selectd rooms: {}".format(room_number, view.Name))
+                room_number = room.LookupParameter("Number").AsString()
+                print("Room {} not in selectd rooms: {}".format(room_number, view.Name))
                 continue
 
     t.Commit()
@@ -498,7 +649,7 @@ except Exception as e:
     end_time = time.time()
     runtime = end_time - start_time
 
-    error_occured = ("Error occurred: %s", str(e))    
+    error_occured = ("Error occurred: %seg", str(e))    
     run_result = "Error"
     element_count = 0
     

@@ -1,4 +1,4 @@
-title: "Clear\n Annotations"
+title: "Tag Walls"
 
 # context:
 #   - Walls
@@ -6,47 +6,50 @@ title: "Clear\n Annotations"
 
 tooltip:   
   en_us: >-
-    Version   =   0.0.3
+    Version   =   0.0.1
     
-    Date       =   03.10.2024
+    Date       =   07.10.2024
 
     ________________________________________________________________
-    
     
     
     Tool Description:
 
 
-    Deletes all annotations in the active view.
+    This is a tool that Tags all walls on selected views.
 
     ________________________________________________________________
     
+    
     How-To Guide:
+    
+    Step 1: 
+    
+    Choose the view types where you want to tag walls.
+
+    Step 2: 
+
+    Once the tool runs, it shows the total number of walls tagged.
 
 
-    1. Open a view.
-
-    2. Run the tool.
-
-
-    Note: This tool would delete ALL THE ANNOTATION ELEMENTS in the view.
-   
     ________________________________________________________________
     
     
     Changelog:
     
-    - [12.12.2024] v0.0.1 First Testing
+    
+    - [07.10.2024] v0.0.1 Selection of views on sheets added
+
     
     ________________________________________________________________
 
 # highlight: new
-# highlight: updated
+highlight: updated
 
-help_url: "https://darcairo.sharepoint.com/sites/DARC/SitePages/Align-Levels.aspx"
+help_url: "https://darcairo.sharepoint.com/sites/DARC/SitePages/Center-Room-Tags.aspx"
 
 author: 
-  - Prajwal Kumar
+  - Abhiram Nair
 # authors:
 #   - John Doe
 #   - Jane Doe

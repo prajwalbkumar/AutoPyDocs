@@ -6,16 +6,20 @@ title: "Walls"
 
 tooltip:   
  en_us: >-
-    Version   =   0.0.1
+    Version   =   0.0.2
     
-    Date       =   14.11.2024
+    Date       =   23.12.2024
 
     ________________________________________________________________
         
     Tool Description:
 
 
-    This tool streamlines grid alignment, flips grid bubbles to the standard side, and automatically generates linear dimensions for grids within selected views.
+    This tool will automatically generate dimensions for linear walls within selected views.
+
+    For exterior walls the tool will dimension both external and internal side of the wall.
+
+    For interior walls the tool will dimension only the internal side of the wall.
 
     ________________________________________________________________
         
@@ -31,24 +35,30 @@ tooltip:
 
     Note: Only views already placed on sheets are included in the selection. Views not on sheets are excluded.
 
+    All the external walls should have Ext in the wall name and the external side of the wall should be in the exterior side of the buidling.
+
+    All the interior walls shoul not have Ext in its name.
+
     Delete existing dimensions for the selected views to avoid duplication.
 
     ________________________________________________________________
         
     Changelog:
     
+    - v0.0.2 [23.12.2024]  Added resolution for wall joints
 
     - v0.0.1 [14.11.2024]  Initial testing phase.
     
     ________________________________________________________________
 
-highlight: new
-# highlight: updated
+#highlight: new
+highlight: updated
 
 help_url: "https://darcairo.sharepoint.com/sites/DARC/SitePages/Dimension-Walls.aspx"
 
 author: 
   - Roma Ramnani
+  - Astle James
 # authors:
 #   - John Doe
 #   - Jane Doe

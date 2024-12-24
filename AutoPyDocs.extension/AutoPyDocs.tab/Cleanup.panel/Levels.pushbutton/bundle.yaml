@@ -6,9 +6,9 @@ title: "Align Levels"
 
 tooltip:   
   en_us: >-
-    Version   =   0.0.3
+    Version   =   1.0.0
     
-    Date       =   03.10.2024
+    Date       =   16.12.2024
 
     ________________________________________________________________
     
@@ -36,16 +36,17 @@ tooltip:
     
     Changelog:
     
-    - [13.09.2024] v0.0.3 Selection of Detail views on sheets added
-    - [13.09.2024] v0.0.2 Selection of views on sheets added
-    - [11.09.2024] v0.0.1 First Testing
+    - [16.12.2024] v1.0.0 Option to give distances from crop region added.
+    - [13.09.2024] v0.0.3 Selection of Detail views on sheets added.
+    - [13.09.2024] v0.0.2 Selection of views on sheets added.
+    - [11.09.2024] v0.0.1 First Testing.
     
     ________________________________________________________________
 
 # highlight: new
-# highlight: updated
+highlight: updated
 
-help_url: "https://darcairo.sharepoint.com/sites/DARC/SitePages/Align-Levels.aspx"
+help_url: "https://darcairo.sharepoint.com/:u:/r/sites/DARC/SitePages/AutoPyDocs.aspx?csf=1&web=1&share=EW8UulBMLUhItU5txhEFXB8B4IygcO46WC3Ms2XmjAEuTw&e=V5mAwh"
 
 author: 
   - Abhiram Nair

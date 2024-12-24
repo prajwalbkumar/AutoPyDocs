@@ -14,9 +14,10 @@ from Autodesk.Revit.DB  import FilteredElementCollector, BuiltInCategory, View, 
 from collections        import defaultdict
 from datetime           import datetime
 
-from linked_functions   import align_grids
+from view_functions     import align_grids, get_grids_in_view
 from Extract.RunData    import get_run_data
-from doc_functions      import get_view_on_sheets, filter_element_ownership
+from doc_functions      import get_view_on_sheets
+from g_curve_functions  import refArray, refLine
 
 import Autodesk.Revit.DB    as DB
 
@@ -26,10 +27,11 @@ manual_time = 500
 doc = revit.doc
 output = script.get_output()
 app = __revit__.Application 
-rvt_year = app.SubVersionNumber
+rvt_year = "Revit" + str(app.SubVersionNumber)
 model_name = doc.Title
 tool_name = __title__ 
 user_name = app.Username
+header_data = " | ".join([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), rvt_year, tool_name, model_name, user_name])
 
 view_types = {
         'Floor Plans': ViewType.FloorPlan,
@@ -40,11 +42,6 @@ view_types = {
     }
 selected_views = get_view_on_sheets(doc, view_types)
 
-def ensure_view_is_cropped(view):
-    if isinstance(view, View):
-        if not view.CropBoxActive:
-            view.CropBoxActive = True
-
 def offset_line(revit_line, offset_distance):
     start_point = revit_line.GetEndPoint(0)
     end_point = revit_line.GetEndPoint(1)
@@ -53,21 +50,6 @@ def offset_line(revit_line, offset_distance):
 
     offset_line = revit_line.CreateOffset(offset_distance, normal)
     return offset_line
-
-def get_grids_in_view(doc, view):
-    # Filter to collect grids in the specific view
-    grids_collector = FilteredElementCollector(doc, view.Id) \
-                      .OfCategory(BuiltInCategory.OST_Grids) \
-                      .WhereElementIsNotElementType()
-
-    # Convert to a list and return the grids
-    grids_in_view = list(grids_collector)
-
-    if doc.IsWorkshared:
-        owned_grids = filter_element_ownership(doc, grids_in_view)
-        return owned_grids
-    else: 
-        return grids_in_view 
 
 def get_orientation(grids):
     start = grids.Curve.GetEndPoint(0)
@@ -142,19 +124,6 @@ def gradient(grid):
 
 def parallel(gridA, gridB):
     return gradient(gridA) == gradient(gridB)
- 
-def refArray(listConv):
-    refArray = DB.ReferenceArray()
-    for e in listConv:
-        refArray.Append(DB.Reference(e))
-    return refArray
-
-def refLine(points):
-    n = len(points) - 1
-    start = points[0]
-    end = points[n]
-    dim_ref = DB.Line.CreateBound(start, end)
-    return  dim_ref
 
 def offset_line_plan(revit_line, offset_distance):
     # Calculate the direction & normal vector of the line
@@ -187,13 +156,20 @@ def offset_line_elev(revit_line, offset_distance):
     return offset_line
 
 
-t = DB.Transaction(doc, "CropView")
-t.Start()
-for view in selected_views:
-    ensure_view_is_cropped(view)
-t.Commit()
-    
-align_grids(doc, selected_views)
+# t = DB.Transaction(doc, "CropView")
+# t.Start()
+# for view in selected_views:
+#     ensure_view_is_cropped(view)
+# t.Commit()
+
+align_choice = forms.alert(
+    "Are your grids aligned?",
+    options= ['No, please align grids and dimension them!', 'Yes, only dimension grids!'],
+    exitscript=True)
+if not align_choice:
+    forms.alert("No selction found. Exiting script.", exitscript=True)
+if align_choice == 'No, please align grids and dimension them!':
+    align_grids(doc, selected_views)
 
 grid_list_length = 0
 failed_data = []
@@ -284,7 +260,7 @@ try:
         #print("Sorted_Groups: {}".format(len(sorted_groups)))
 
         offset_distance1 = 1.5 * s_factor/100
-        offset_distance2 = 2.5 * s_factor/100
+        offset_distance2 = 3 * s_factor/100
 
         for k in sorted_groups.keys():
             
@@ -338,7 +314,7 @@ try:
 
     end_time = time.time()
     runtime = end_time - start_time
-            
+ 
     run_result = "Tool ran successfully"
     if total_grid_count:
         element_count = total_grid_count
@@ -363,6 +339,9 @@ except Exception as e:
     
     get_run_data(__title__, runtime, element_count, manual_time, run_result, error_occured)
 
+finally:
+    t.Dispose()
+
 for view_key, data in view_issue_counts.iteritems(): 
     issue_description = []
     if data["DimensionError"] > 0:
@@ -377,8 +356,7 @@ for view_key, data in view_issue_counts.iteritems():
         failed_data.append(failed_room_data)
 
 if failed_data:
-    header_data = datetime.now().strftime("%Y-%m-%d %H:%M:%S"), rvt_year, tool_name, model_name, user_name 
-    print(header_data)
+    output.print_md(header_data)
     processed_grids = total_grid_count 
     processed_views = total_view_count - len(failed_data)
     output.print_md("##⚠️ Completed. {} grids in {} views dimensioned. {} Issues Found ".format(processed_grids, processed_views, len(failed_data)))
@@ -394,3 +372,8 @@ elif total_grid_count > 0 and not failed_data:
 
 elif total_grid_count > 0 and failed_data:
     output.print_md("##✅ {} Completed with issues.".format(__title__))
+
+
+print("Script runtime: {:.2f} seconds".format(runtime))
+
+
