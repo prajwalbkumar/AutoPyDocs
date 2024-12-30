@@ -208,8 +208,6 @@ for view in selected_views:
 
         
     if view.ViewType == ViewType.Elevation:
-
-
         for wall in walls_in_view:
             vertical_grid = []
             horizontal_grid = []
