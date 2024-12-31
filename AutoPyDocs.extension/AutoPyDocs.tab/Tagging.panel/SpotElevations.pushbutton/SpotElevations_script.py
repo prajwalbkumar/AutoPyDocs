@@ -40,10 +40,70 @@ header_data = " | ".join([
     datetime.now().strftime("%Y-%m-%d %H:%M:%S"), rvt_year, tool_name, model_name, user_name
 ])
 
-view = doc.ActiveView
-view_level_id = view.GenLevel.Id
 
-all_floors = FilteredElementCollector(doc).OfCategory(BuiltInCategory.OST_Floors).WherePasses(ElementLevelFilter(view_level_id)).ToElements()
+view = doc.ActiveView
+
+linked_instance = FilteredElementCollector(doc).OfClass(RevitLinkInstance).ToElements()
+if linked_instance:
+    documentation_file = forms.alert("Is this a Documentation File or a Live File", warn_icon=False, options=["Documentation File", "Live File"])
+
+    if not documentation_file:
+        forms.alert("No file option selected. Exiting script.", exitscript=True)
+
+    if documentation_file == "Documentation File":
+        link_name = []
+        for link in linked_instance:
+            link_name.append(link.Name)
+
+        ar_instance_name = forms.SelectFromList.show(link_name, title = "Select AR Linked File", width=600, height=600, button_name="Select File", multiselect=False)
+
+        if not ar_instance_name:
+            script.exit()
+
+        for link in linked_instance:
+            if ar_instance_name == link.Name:
+                ar_instance = link
+                break
+
+        ar_doc = ar_instance.GetLinkDocument()
+        if not ar_doc:
+            forms.alert("No instance found of the selected AR File.\n"
+                        "Use Manage Links to Load the Link in the File!", title = "Link Missing", warn_icon = True)
+            script.exit()
+
+        views_in_link = FilteredElementCollector(ar_doc).OfCategory(BuiltInCategory.OST_Views).WhereElementIsNotElementType().ToElements()
+
+        for link_view in views_in_link:
+            if link_view.Name == "3D-Navisworks-Export":
+                geom_view = link_view
+                break
+        
+        live_view_level_name = doc.GetElement(view.GenLevel.Id).Name
+        link_levels = FilteredElementCollector(ar_doc).OfCategory(BuiltInCategory.OST_Levels).WhereElementIsNotElementType().ToElements()
+
+        for level in link_levels:
+            if level.Name == live_view_level_name:
+                view_level_id = level.Id
+                break
+
+        all_floors = FilteredElementCollector(ar_doc).OfCategory(BuiltInCategory.OST_Floors).WherePasses(ElementLevelFilter(view_level_id)).ToElements()
+        
+
+    
+    else:
+        linked_instance = None
+        ar_doc = doc
+        view_level_id = view.GenLevel.Id
+        all_floors = FilteredElementCollector(ar_doc).OfCategory(BuiltInCategory.OST_Floors).WherePasses(ElementLevelFilter(view_level_id)).ToElements()
+else:
+    linked_instance = None
+    ar_doc = doc
+    view_level_id = view.GenLevel.Id
+    all_floors = FilteredElementCollector(ar_doc).OfCategory(BuiltInCategory.OST_Floors).WherePasses(ElementLevelFilter(view_level_id)).ToElements()
+
+
+# Take all Rooms, Loop and find the floors that are attached to that specific Room.
+
 
 if not all_floors:
     script.exit()
@@ -78,32 +138,6 @@ for floor in all_floors:
 
     floor_inflated_outline = Outline(inflated_min, inflated_max)
 
-    # adj_floors = FilteredElementCollector(doc).OfCategory(BuiltInCategory.OST_Floors).WherePasses(LogicalAndFilter(ElementLevelFilter(view_level_id), BoundingBoxIntersectsFilter(floor_inflated_outline))).ToElements()
-
-
-    # filtered_by_level = FilteredElementCollector(doc).OfCategory(BuiltInCategory.OST_Floors).WherePasses(ElementLevelFilter(view_level_id)).ToElements()
-    # filtered_by_bbox = FilteredElementCollector(doc).OfCategory(BuiltInCategory.OST_Floors).WherePasses(BoundingBoxIntersectsFilter(floor_inflated_outline)).ToElements()
-
-    # # Combine manually for now
-    # adj_floors = filtered_by_bbox
-
-    # # print("Filtered by Level: {} floors".format(len(filtered_by_level)))
-    # # print("Filtered by Bounding Box: {} floors".format(len(filtered_by_bbox)))
-    # # print("Final Adjacent Floors: {} floors".format(len(adj_floors)))
-    # print("New Floor")
-
-    # for floor in filtered_by_bbox:
-    #     print(floor.Id)
-
-    # print("-"*50)
-
-    # for floor in filtered_by_level:
-    #     print(floor.Id)
-
-    # print("-" * 100)
-
-    # continue
-
     for adj_floor in all_floors:
         adj_floor_bbox = adj_floor.get_BoundingBox(view)
         if adj_floor_bbox is None:
@@ -133,7 +167,10 @@ for floor in all_floors:
                         solid = geom_obj
                         for face in solid.Faces:
                             if face.FaceNormal.Z == 1 and face.Reference:
-                                reference = face.Reference
+                                if linked_instance:
+                                    reference = face.Reference.CreateLinkReference(ar_instance)
+                                else:
+                                    reference = face.Reference
                                 # point = face.Evaluate(UV(0.5, 0.5))
                                 face_bbox = face.GetBoundingBox()
                                 uv_point = (face_bbox.Min + face_bbox.Max)/2
@@ -152,7 +189,12 @@ for floor in all_floors:
                         continue
 
                     # print(f"Creating SpotElevation for Floor {floor.Id}")
-                    doc.Create.NewSpotElevation(view, reference, point, point, point, point, False)
+                    try:
+                        doc.Create.NewSpotElevation(view, reference, point, point, point, point, False)
+                    except:
+                        print("Failed for Floor {}" .format(floor.Id))
+                        continue
                 # else:
                 #     # print(f"No valid reference or point for Floor {floor.Id}. Skipping...")
 t.Commit()
+
