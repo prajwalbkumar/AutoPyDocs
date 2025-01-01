@@ -55,7 +55,7 @@ if linked_instance:
         for link in linked_instance:
             link_name.append(link.Name)
 
-        ar_instance_name = forms.SelectFromList.show(link_name, title = "Select AR Linked File", width=600, height=600, button_name="Select File", multiselect=False)
+        ar_instance_name = forms.SelectFromList.show(link_name, title = "Select Linked File Containing Floors", width=600, height=600, button_name="Select File", multiselect=False)
 
         if not ar_instance_name:
             script.exit()
@@ -67,8 +67,8 @@ if linked_instance:
 
         ar_doc = ar_instance.GetLinkDocument()
         if not ar_doc:
-            forms.alert("No instance found of the selected AR File.\n"
-                        "Use Manage Links to Load the Link in the File!", title = "Link Missing", warn_icon = True)
+            forms.alert("No instance found of the selected link.\n"
+                        "Use Manage Links to Load the Link in the active document!", title = "Link Missing", warn_icon = True)
             script.exit()
 
         views_in_link = FilteredElementCollector(ar_doc).OfCategory(BuiltInCategory.OST_Views).WhereElementIsNotElementType().ToElements()
@@ -77,6 +77,8 @@ if linked_instance:
             if link_view.Name == "3D-Navisworks-Export":
                 geom_view = link_view
                 break
+        
+        # TODO: else: Choose any Random 3D View
         
         live_view_level_name = doc.GetElement(view.GenLevel.Id).Name
         link_levels = FilteredElementCollector(ar_doc).OfCategory(BuiltInCategory.OST_Levels).WhereElementIsNotElementType().ToElements()
@@ -87,8 +89,7 @@ if linked_instance:
                 break
 
         all_floors = FilteredElementCollector(ar_doc).OfCategory(BuiltInCategory.OST_Floors).WherePasses(ElementLevelFilter(view_level_id)).ToElements()
-        
-
+    
     
     else:
         linked_instance = None
@@ -122,7 +123,7 @@ for floor in all_floors:
 
     floor_outline = Outline(floor_bbox.Min, floor_bbox.Max)
     # Inflate the bounding box manually by scaling the min and max points
-    scale_factor = 1.5  # Adjust scale factor as needed
+    scale_factor = 1.3  # Adjust scale factor as needed
     bbox_min = floor_bbox.Min
     bbox_max = floor_bbox.Max
     inflated_min = XYZ(
@@ -171,7 +172,7 @@ for floor in all_floors:
                                     reference = face.Reference.CreateLinkReference(ar_instance)
                                 else:
                                     reference = face.Reference
-                                # point = face.Evaluate(UV(0.5, 0.5))
+                                    
                                 face_bbox = face.GetBoundingBox()
                                 uv_point = (face_bbox.Min + face_bbox.Max)/2
                                 point = face.Evaluate(uv_point)
@@ -194,7 +195,5 @@ for floor in all_floors:
                     except:
                         print("Failed for Floor {}" .format(floor.Id))
                         continue
-                # else:
-                #     # print(f"No valid reference or point for Floor {floor.Id}. Skipping...")
+            break
 t.Commit()
-
