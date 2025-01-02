@@ -1,4 +1,4 @@
-title: "Center\n  Room Tags"
+title: "Tag Doors"
 
 # context:
 #   - Walls
@@ -16,7 +16,7 @@ tooltip:
     Tool Description:
 
 
-    This is a tool that Centers Room Tags on Floor Plans.
+    This is a tool that Tags all Doors on selected views.
 
     ________________________________________________________________
     
@@ -25,15 +25,11 @@ tooltip:
     
     Step 1: 
     
-    Choose the view types where you want to center room tags, such as Floor Plans or Ceiling Plans.
+    Choose the view types where you want to tag Doors.
 
     Step 2: 
 
-    Pick the views placed on sheets where the room tags should be centered.
-
-    Step 3: 
-
-    Once the tool runs, it shows the total number of centered tags. A list of any skipped rooms (with reasons) is also displayed.
+    Once the tool runs, it shows the total number of Doors tagged.
 
 
     ________________________________________________________________

@@ -370,10 +370,13 @@ for view in selected_views:
 
             if room.IsPointInRoom(room_center):
                 move_room_and_tag(tag, room, room_center)
+            location = room.Location
+            if not link_instance:
+                if location:
+                    location.Point = room_center
+                else:
 
-            else:
-
-                ignored_rooms.append(room)
+                    ignored_rooms.append(room)
             continue
 
         # Handling larger polygonal rooms

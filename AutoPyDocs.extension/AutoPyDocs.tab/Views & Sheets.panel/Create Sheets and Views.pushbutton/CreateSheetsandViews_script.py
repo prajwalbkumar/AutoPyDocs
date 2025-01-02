@@ -322,6 +322,7 @@ for template_name in templates_to_create:
 
         # Check if the base template exists in the document
         base_elevation_template = next((vt for vt in elevation_templates if vt.Name.lower() == new_template_name.lower()),None)
+        base_arch_elevation_template = None
         # Special case for elevations: Create "Elevation_1/100" if it doesn't exist
         if not base_elevation_template and "{}_Elevation_1/100".format(split_discipline) in new_template_name:
             base_arch_elevation_template = next((vt for vt in elevation_templates if vt.Name.lower() == "architectural elevation"), None)
@@ -335,6 +336,7 @@ for template_name in templates_to_create:
 
         # Check if the base template exists in the document
         base_section_template = next((vt for vt in elevation_templates if vt.Name.lower() == new_template_name.lower()),None)
+        base_arch_section_template = None
         # Special case for sections: Create "AR_Section_1/100" if it doesn't exist
         if not base_section_template and "{}_Section_1/100".format(split_discipline) in new_template_name:
             base_arch_section_template = next((vt for vt in elevation_templates if vt.Name.lower() == "architectural section"), None)
@@ -393,6 +395,7 @@ for template_name in templates_to_create:
 
         # Check if the base template exists in the document
         base_elevation_template = next((vt for vt in elevation_templates if vt.Name.lower() == new_template_name.lower()),None)
+        base_arch_elevation_template = None
         # Special case for elevations: Create "Elevation_1/100" if it doesn't exist
         if not base_elevation_template and "{}_Elevation_1/100".format(split_discipline) in new_template_name:
             base_arch_elevation_template = next((vt for vt in elevation_templates if vt.Name.lower() == "architectural elevation"), None)
@@ -406,6 +409,7 @@ for template_name in templates_to_create:
 
         # Check if the base template exists in the document
         base_section_template = next((vt for vt in elevation_templates if vt.Name.lower() == new_template_name.lower()),None)
+        base_arch_section_template = None
         # Special case for sections: Create "AR_Section_1/100" if it doesn't exist
         if not base_section_template and "{}_Section_1/100".format(split_discipline) in new_template_name:
             base_arch_section_template = next((vt for vt in elevation_templates if vt.Name.lower() == "architectural section"), None)
@@ -468,6 +472,7 @@ for template_name in templates_to_create:
 
         # Check if the base template exists in the document
         base_elevation_template = next((vt for vt in elevation_templates if vt.Name.lower() == new_template_name.lower()),None)
+        base_arch_elevation_template = None
         # Special case for elevations: Create "Elevation_1/100" if it doesn't exist
         if not base_elevation_template and "{}_Elevation_1/100".format(split_discipline) in new_template_name:
             base_arch_elevation_template = next((vt for vt in elevation_templates if vt.Name.lower() == "architectural elevation"), None)
@@ -481,6 +486,7 @@ for template_name in templates_to_create:
 
         # Check if the base template exists in the document
         base_section_template = next((vt for vt in elevation_templates if vt.Name.lower() == new_template_name.lower()),None)
+        base_arch_section_template = None
         # Special case for sections: Create "AR_Section_1/100" if it doesn't exist
         if not base_section_template and "{}_Section_1/100".format(split_discipline) in new_template_name:
             base_arch_section_template = next((vt for vt in elevation_templates if vt.Name.lower() == "architectural section"), None)
@@ -542,6 +548,7 @@ for template_name in templates_to_create:
 
         # Check if the base template exists in the document
         base_elevation_template = next((vt for vt in elevation_templates if vt.Name.lower() == new_template_name.lower()),None)
+        base_arch_elevation_template = None
         # Special case for elevations: Create "Elevation_1/100" if it doesn't exist
         if not base_elevation_template and "{}_Elevation_1/100".format(split_discipline) in new_template_name:
             base_arch_elevation_template = next((vt for vt in elevation_templates if vt.Name.lower() == "architectural elevation"), None)
@@ -555,6 +562,7 @@ for template_name in templates_to_create:
 
         # Check if the base template exists in the document
         base_section_template = next((vt for vt in elevation_templates if vt.Name.lower() == new_template_name.lower()),None)
+        base_arch_section_template = None
         # Special case for sections: Create "AR_Section_1/100" if it doesn't exist
         if not base_section_template and "{}_Section_1/100".format(split_discipline) in new_template_name:
             base_arch_section_template = next((vt for vt in elevation_templates if vt.Name.lower() == "architectural section"), None)
@@ -617,6 +625,7 @@ for template_name in templates_to_create:
 
         # Check if the base template exists in the document
         base_elevation_template = next((vt for vt in elevation_templates if vt.Name.lower() == new_template_name.lower()),None)
+        base_arch_section_template = None
         # Special case for elevations: Create "Elevation_1/100" if it doesn't exist
         if not base_elevation_template and "{}_Elevation_1/100".format(split_discipline) in new_template_name:
             base_arch_elevation_template = next((vt for vt in elevation_templates if vt.Name.lower() == "architectural elevation"), None)
@@ -630,6 +639,7 @@ for template_name in templates_to_create:
 
         # Check if the base template exists in the document
         base_section_template = next((vt for vt in elevation_templates if vt.Name.lower() == new_template_name.lower()),None)
+        base_arch_section_template = None
         # Special case for sections: Create "AR_Section_1/100" if it doesn't exist
         if not base_section_template and "{}_Section_1/100".format(split_discipline) in new_template_name:
             base_arch_section_template = next((vt for vt in elevation_templates if vt.Name.lower() == "architectural section"), None)

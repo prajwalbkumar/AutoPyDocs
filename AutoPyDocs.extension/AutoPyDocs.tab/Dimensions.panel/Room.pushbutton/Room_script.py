@@ -342,30 +342,33 @@ doc_opted = forms.SelectFromList.show(doc_ops,
 if not doc_opted:
     forms.alert ("Model type not selected", exitscript = True)
 
+
 def select_link_doc(doc):
-    if 'Link' in doc_opted:
-        linked_instances = FilteredElementCollector(doc).OfClass(RevitLinkInstance).ToElements()
-        if not linked_instances:
-            forms.alert("No linked document", exitscript=True)
+    
+    linked_instances = FilteredElementCollector(doc).OfClass(RevitLinkInstance).ToElements()
+    if not linked_instances:
+        forms.alert("No linked document", exitscript=True)
 
-        link_names = [link.Name for link in linked_instances]
+    link_names = [link.Name for link in linked_instances]
 
-        target_instance_names = forms.SelectFromList.show(link_names, title="Select File with Rooms", width=600, height=600, button_name="Select File", multiselect=False, exitscript = True)
+    target_instance_names = forms.SelectFromList.show(link_names, title="Select File with Rooms", width=600, height=600, button_name="Select File", multiselect=False, exitscript = True)
 
-        if not target_instance_names:
-            script.exit()
-        
-        for link_instance in linked_instances:
-            if link_instance.Name in target_instance_names:    
-                link_doc = link_instance.GetLinkDocument()  
-                transform = link_instance.GetTotalTransform() 
-                selected_link = link_instance
+    if not target_instance_names:
+        script.exit()
+    
+    for link_instance in linked_instances:
+        if link_instance.Name in target_instance_names:    
+            link_doc = link_instance.GetLinkDocument()  
+            transform = link_instance.GetTotalTransform() 
+            selected_link = link_instance
 
-        return selected_link, link_doc
-    else:
-        return None
+    return selected_link, link_doc
 
-selected_link, link_doc = select_link_doc(doc)
+if 'Link' in doc_opted:
+    selected_link, link_doc = select_link_doc(doc)
+else:
+    selected_link = None
+
 
 dim_ops = ['Length & Width only', 'Least width', 'All wall segments' ]
 dim_opted = forms.SelectFromList.show(dim_ops,
