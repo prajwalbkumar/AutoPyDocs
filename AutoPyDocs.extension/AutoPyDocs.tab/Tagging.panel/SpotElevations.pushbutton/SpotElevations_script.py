@@ -42,6 +42,7 @@ header_data = " | ".join([
 
 
 view = doc.ActiveView
+view_Scale = str(view.Scale)
 
 linked_instance = FilteredElementCollector(doc).OfClass(RevitLinkInstance).ToElements()
 if linked_instance:
@@ -171,21 +172,6 @@ else:
     ai_floor_finishes = FilteredElementCollector(ai_doc).OfCategory(BuiltInCategory.OST_Floors).WherePasses(ElementLevelFilter(view_level_id)).ToElements()
 
 
-# Take all Rooms and find the location point of any room. 
-
-# Find all finish floor face candidates that require the Spot Elevation. 
-
-# Find all core floor faces from the ST Model. 
-
-# Loop through all Room Centers and project it to the face candidates. 
-
-# If projection returns false check if the projection was to the , project it to the ST face.
-
-
-print(len(ai_floor_finishes))
-print(len(st_floor_finishes))
-print(len(ar_rooms))
-
 if not ai_floor_finishes:
     script.exit()
 
@@ -197,12 +183,53 @@ if not ar_rooms:
 
 finish_candidates = []
 
+spot_dimension_collector = FilteredElementCollector(doc).OfClass(SpotDimensionType).WhereElementIsElementType()
+spot_dimension_type_names = [spot_dimension.LookupParameter("Type Name").AsValueString() for spot_dimension in spot_dimension_collector]
+
+ffl_type_names = [name for name in spot_dimension_type_names if "FFL" in name and view_Scale in name]
+cl_type_names = [name for name in spot_dimension_type_names if "CL" in name and view_Scale in name]
+
+ffl_spot_dimension_name = forms.SelectFromList.show(ffl_type_names, title = "Select FFL Tag Type", width=600, height=600, button_name="Select Tag Type", multiselect=False)
+cl_spot_dimension_name = forms.SelectFromList.show(cl_type_names, title = "Select CL Tag Type", width=600, height=600, button_name="Select Tag Type", multiselect=False)
+
+ffl_spot_dimension_type = [type for type in spot_dimension_collector if type.LookupParameter("Type Name").AsValueString() == ffl_spot_dimension_name]
+cl_spot_dimension_type = [type for type in spot_dimension_collector if type.LookupParameter("Type Name").AsValueString() == cl_spot_dimension_name]
+
+ffl_spot_dimension_type = ffl_spot_dimension_type[0]
+cl_spot_dimension_type = cl_spot_dimension_type[0]
+
+consumed_origins = []
+
 t = Transaction(doc, "Spot Elevation")
 t.Start()
 for floor in ai_floor_finishes:
     floor_grade = round(floor.LookupParameter("Height Offset From Level").AsDouble(), 2)
     if floor.LookupParameter("Area").AsDouble() < 40:
         continue
+
+    options = Options()
+    options.View = view
+    options.IncludeNonVisibleObjects = True
+    options.ComputeReferences = True
+
+    geometry_faces = floor.get_Geometry(options)
+    if not geometry_faces:
+        # print("No geometry for floor:", floor.Id)
+        continue
+
+    reference = None
+    point = None
+
+    for geom_obj in geometry_faces:
+        if hasattr(geom_obj, "Faces"):
+            solid = geom_obj
+            for face in solid.Faces:
+                try:
+                    if face.FaceNormal.Z == 1 and face.Reference:
+                        finish_candidates.append(face)
+                except:
+                    continue
+
 
     floor_bbox = floor.get_BoundingBox(view)
     if floor_bbox is None:
@@ -235,14 +262,9 @@ for floor in ai_floor_finishes:
             if round(adj_floor.LookupParameter("Height Offset From Level").AsDouble(), 2) == floor_grade:
                 continue
             else:
-                options = Options()
-                options.View = view
-                options.IncludeNonVisibleObjects = True
-                options.ComputeReferences = True
-
                 geometry_faces = floor.get_Geometry(options)
                 if not geometry_faces:
-                    print("No geometry for floor:", floor.Id)
+                    # print("No geometry for floor:", floor.Id)
                     continue
 
                 reference = None
@@ -252,24 +274,27 @@ for floor in ai_floor_finishes:
                     if hasattr(geom_obj, "Faces"):
                         solid = geom_obj
                         for face in solid.Faces:
-                            if face.FaceNormal.Z == 1 and face.Reference:
-                                finish_candidates.append(face)
-                                if linked_instance:
-                                    reference = face.Reference.CreateLinkReference(ai_instance)
-                                else:
-                                    reference = face.Reference
-                                    
-                                face_bbox = face.GetBoundingBox()
-                                uv_point = (face_bbox.Min + face_bbox.Max)/2
-                                point = face.Evaluate(uv_point)
-                                break
+                            try:
+                                if face.FaceNormal.Z == 1 and face.Reference:
+                                    finish_candidates.append(face)
+                                    if linked_instance:
+                                        reference = face.Reference.CreateLinkReference(ai_instance)
+                                    else:
+                                        reference = face.Reference
+                                        
+                                    face_bbox = face.GetBoundingBox()
+                                    uv_point = (face_bbox.Min + face_bbox.Max)/2
+                                    point = face.Evaluate(uv_point)
+                                    break
+                            except:
+                                continue
+
                     if reference:
                         break
 
                 # Ensure point aligns with the reference
                 if reference is not None and point is not None:
                     projected_point = face.Project(point)
-                    print("PROJECTINNNGGG")
                     if projected_point and projected_point.XYZPoint:
                         point = projected_point.XYZPoint
                     else:
@@ -278,49 +303,80 @@ for floor in ai_floor_finishes:
 
                     # print(f"Creating SpotElevation for Floor {floor.Id}")
                     try:
-                        doc.Create.NewSpotElevation(view, reference, point, point, point, point, False)
+                        consumed_origins.append(point)
+                        ffl_spot_elevation = doc.Create.NewSpotElevation(view, reference, point, point, point, point, False)
+                        ffl_spot_elevation.DimensionType = ffl_spot_dimension_type
+
                     except:
-                        print("Failed for Floor {}" .format(floor.Id))
+                        # print("Failed for Floor {}" .format(floor.Id))
                         continue
             break
 
-st_floor_candidates = []
-for floor in st_floor_finishes:
-    options = Options()
-    options.View = view
-    options.ComputeReferences = True
-    options.IncludeNonVisibleObjects = True
-
-    geometry_faces = floor.get_Geometry(options)
-    if not geometry_faces:
-        print("No geometry for floor:", floor.Id)
-        continue
-
-    reference = None
-    point = None
-
-    for geom_obj in geometry_faces:
-        if hasattr(geom_obj, "Faces"):
-            solid = geom_obj
-            for face in solid.Faces:
-                if face.FaceNormal.Z == 1 and face.Reference:
-                    st_floor_candidates.append(face)
-
-
 for room in ar_rooms:
+    # print("------")
+
+    room_finish = False
     room_point = room.Location.Point
-    
-    print("-----------")
-    print(room_point)
-    print(room.LookupParameter("Name").AsString())
+
+    room_name = (room.LookupParameter("Name").AsValueString()).lower()
+    # print(room_name)
+    # print("-Processing-")
+
+
+    # z_room_point = XYZ(room_point.X, room_point.Y, room_point.Z + 1)
     for face in finish_candidates:
         try:
-            print(face.Project(room_point))
-            if face.Project(room_point).XYZPoint:
-                continue
+            projecton = face.Project(room_point)
+            if projecton and projecton.XYZPoint: # If valid projection is returned, then the room contains a finish. break the loop and go to other room
+                room_finish = True
+                break
         except:
-            print("No Finish Here")
-            break
+            continue
+            # print("None - None")
+    
+    else: 
+        for floor in st_floor_finishes:
+            options = Options()
+            options.View = view
+            options.IncludeNonVisibleObjects = True
+            options.ComputeReferences = True
 
+            geometry_faces = floor.get_Geometry(options)
+            if not geometry_faces:
+                # print("No geometry for floor:", floor.Id)
+                continue
+            
+            face = None
+            reference = None
+            for geom_obj in geometry_faces:
+                if hasattr(geom_obj, "Faces"):
+                    solid = geom_obj
+                    for face in solid.Faces:
+                        if face.FaceNormal.Z == 1 and face.Reference:
+                            if linked_instance:
+                                reference = face.Reference.CreateLinkReference(st_instance)
+                            else:
+                                reference = face.Reference
+                            break
+                if reference:
+                    break
+
+            # Ensure point aligns with the reference
+            if reference is not None:
+                projected_point = face.Project(room_point)
+                if projected_point and projected_point.XYZPoint:
+                    point = projected_point.XYZPoint
+                    # print(point)
+                else:
+                    # print("Point does not project properly on reference. Skipping...")
+                    continue
+
+                try:
+                    cl_spot_elevation = doc.Create.NewSpotElevation(view, reference, point, point, point, point, False)
+                    cl_spot_elevation.SpotDimensionType = cl_spot_dimension_type
+                    break
+                except:
+                    # print("Failed for Floor {}" .format(floor.Id))
+                    continue
 
 t.Commit()
