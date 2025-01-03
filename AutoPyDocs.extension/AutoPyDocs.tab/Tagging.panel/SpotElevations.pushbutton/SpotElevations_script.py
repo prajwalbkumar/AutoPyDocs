@@ -46,7 +46,7 @@ view_Scale = str(view.Scale)
 
 linked_instance = FilteredElementCollector(doc).OfClass(RevitLinkInstance).ToElements()
 if linked_instance:
-    documentation_file = forms.alert("Is this a Documentation File or a Live File", warn_icon=False, options=["Documentation File", "Live File"])
+    documentation_file = forms.alert("Is this a Documentation File or a Live File", warn_icon=False, options=["Documentation File", "Model File"])
 
     if not documentation_file:
         forms.alert("No file option selected. Exiting script.", exitscript=True)
@@ -125,9 +125,13 @@ if linked_instance:
                 st_view_level_id = level.Id
                 break
         
-        st_floor_finishes = FilteredElementCollector(st_doc).OfCategory(BuiltInCategory.OST_Floors).WherePasses(ElementLevelFilter(st_view_level_id)).ToElements()
-
-
+        st_floors = FilteredElementCollector(st_doc).OfCategory(BuiltInCategory.OST_Floors).WherePasses(ElementLevelFilter(st_view_level_id)).ToElements()
+        
+        st_floor_finishes = [floor for floor in st_floors if not "PT" in floor.Name.upper()]
+        pt_floor_finishes = [floor for floor in st_floors if "PT" in floor.Name.upper()]
+        print(len(st_floors))
+        print(len(st_floor_finishes))
+        print(len(pt_floor_finishes))
         ######################################################
         # Collect all AR Rooms
         ar_instance_name = forms.SelectFromList.show(link_name, title = "Select Linked AR File Containing Rooms", width=600, height=600, button_name="Select File", multiselect=False)
@@ -378,5 +382,61 @@ for room in ar_rooms:
                 except:
                     # print("Failed for Floor {}" .format(floor.Id))
                     continue
+
+for floor in pt_floor_finishes:
+    print("YAY")
+
+    options = Options()
+    options.View = view
+    options.IncludeNonVisibleObjects = True
+    options.ComputeReferences = True
+
+    geometry_faces = floor.get_Geometry(options)
+    if not geometry_faces:
+        # print("No geometry for floor:", floor.Id)
+        continue
+
+    reference = None
+    point = None
+
+    for geom_obj in geometry_faces:
+        if hasattr(geom_obj, "Faces"):
+            solid = geom_obj
+            for face in solid.Faces:
+                try:
+                    if face.FaceNormal.Z == 1 and face.Reference:
+                        finish_candidates.append(face)
+                        if linked_instance:
+                            reference = face.Reference.CreateLinkReference(st_instance)
+                        else:
+                            reference = face.Reference
+                            
+                        face_bbox = face.GetBoundingBox()
+                        uv_point = (face_bbox.Min + face_bbox.Max)/2
+                        point = face.Evaluate(uv_point)
+                        break
+                except:
+                    continue
+
+        if reference:
+            break
+
+    # Ensure point aligns with the reference
+    if reference is not None and point is not None:
+        projected_point = face.Project(point)
+        if projected_point and projected_point.XYZPoint:
+            point = projected_point.XYZPoint
+        else:
+            # print("Point does not project properly on reference. Skipping...")
+            continue
+
+        # print(f"Creating SpotElevation for Floor {floor.Id}")
+        try:
+            cl_spot_elevation = doc.Create.NewSpotElevation(view, reference, point, point, point, point, False)
+            cl_spot_elevation.DimensionType = cl_spot_dimension_type
+
+        except:
+            print("Failed for Floor {}" .format(floor.Id))
+            continue
 
 t.Commit()
