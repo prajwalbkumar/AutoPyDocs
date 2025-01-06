@@ -62,6 +62,44 @@ def triangulate_point(face):
     centroid = XYZ(centroid.X, centroid.Y - 6, centroid.Z)
 
     return centroid
+
+
+def get_faces(solid):
+    faces = []
+    all_faces = solid.Faces
+    for face in all_faces:
+        faces.append(face)
+    return faces
+
+
+def get_upper_faces(stair, stair_geometry):
+    upper_faces = []
+    if (stair.LookupParameter("Family").AsValueString() == "Assembled Stair"):
+        for components in stair_geometry:
+            for geometry in components:
+                if (geometry.ToString() == "Autodesk.Revit.DB.GeometryInstance"):
+                    geometry_instance = geometry.GetInstanceGeometry()
+                    for solid in geometry_instance:
+                        faces = get_faces(solid)
+                        if faces:
+                            for face in faces:
+                                vector_z = int(face.FaceNormal.Z)
+                                if vector_z == 1:
+                                    upper_faces.append(face)
+        return upper_faces
+
+    else:
+        for component in stair_geometry:
+            for geometry in component:
+                if (geometry.ToString() == "Autodesk.Revit.DB.Solid"):
+                    # print(geometry.Volume) ## This is a solid as well
+                    faces = get_faces(geometry)
+                    if faces:
+                            for face in faces:
+                                vector_z = int(face.FaceNormal.Z)
+                                if vector_z == 1:
+                                    upper_faces.append(face)
+        return upper_faces
      
 
 view = doc.ActiveView
@@ -198,7 +236,7 @@ if linked_instance:
             # print(len(pt_floor_finishes))
             ######################################################
             # Collect all AR Rooms
-            ar_instance_name = forms.SelectFromList.show(link_name, title = "Select Linked AR File Containing Rooms", width=600, height=600, button_name="Select File", multiselect=False)
+            ar_instance_name = forms.SelectFromList.show(link_name, title = "Select Linked AR File Containing Rooms and Staircases", width=600, height=600, button_name="Select File", multiselect=False)
             if not ar_instance_name:
                 script.exit()
 
@@ -229,8 +267,12 @@ if linked_instance:
     else:
         linked_instance = None
         ai_doc = doc
+        ar_doc = doc
         view_level_id = view.GenLevel.Id
         ai_floor_finishes = FilteredElementCollector(doc).OfCategory(BuiltInCategory.OST_Floors).WherePasses(ElementLevelFilter(view_level_id)).ToElements()
+        stair_collector = FilteredElementCollector(doc).OfCategory(BuiltInCategory.OST_Stairs).WhereElementIsNotElementType().ToElements()
+        filtered_stairs = [stair for stair in stair_collector if stair.LookupParameter("Base Level").AsElementId() == view_level_id] 
+
 
 else:
     linked_instance = None
@@ -239,9 +281,6 @@ else:
     ai_floor_finishes = FilteredElementCollector(doc).OfCategory(BuiltInCategory.OST_Floors).WherePasses(ElementLevelFilter(view_level_id)).ToElements()
 
 
-
-if not ai_floor_finishes:
-    script.exit()
 
 
 t = Transaction(doc, "Spot Elevation")
@@ -268,15 +307,62 @@ if view_type == ViewType.FloorPlan:
 
     consumed_origins = []
 
+    options = Options()
+    options.View = view
+    options.IncludeNonVisibleObjects = True
+    options.ComputeReferences = True
+    
+    # for stair in filtered_stairs:
+    #     # Extract Landing Faces
+    #     stair_geometry = []
+    #     stair_landing_ids = stair.GetStairsLandings()
+    #     landing_faces = []
+    #     for landing_id in stair_landing_ids:
+    #         landing = ar_doc.GetElement(landing_id)
+    #         stair_geometry.append(landing.get_Geometry(options))
+
+    #     landing_faces = get_upper_faces(stair, stair_geometry)
+        
+    #     for face in landing_faces:
+    #         reference = Reference(stair)
+    #         # if linked_instance:
+    #         #     reference = face.Reference.CreateLinkReference(ar_instance)
+    #         # else:
+    #         #     reference = face.Reference
+    #         print(reference.ElementReferenceType)
+                
+    #         face_bbox = face.GetBoundingBox()
+    #         point = triangulate_point(face)
+    #         point = XYZ(point.X, point.Y + 6, point.Z)
+            
+
+
+    #         # Ensure point aligns with the reference
+    #         if reference is not None and point is not None:
+    #             projected_point = face.Project(point)
+    #             if projected_point and projected_point.XYZPoint:
+    #                 point = projected_point.XYZPoint
+    #                 print(point)
+    #             else:
+    #                 print("Point does not project properly on reference. Skipping...")
+    #                 continue
+
+    #             # print(f"Creating SpotElevation for Floor {floor.Id}")
+    #             # try:
+    #             print("Spotting")
+    #             ffl_spot_elevation = doc.Create.NewSpotElevation(view, reference, point, point, point, point, False)
+    #             ffl_spot_elevation.DimensionType = ffl_spot_dimension_type
+
+    #             # except:
+    #             #     print("Failed for Floor")
+    #             #     continue
+    
+
     for floor in ai_floor_finishes:
         floor_grade = round(floor.LookupParameter("Height Offset From Level").AsDouble(), 2)
         if floor.LookupParameter("Area").AsDouble() < 40:
             continue
 
-        options = Options()
-        options.View = view
-        options.IncludeNonVisibleObjects = True
-        options.ComputeReferences = True
 
         geometry_faces = floor.get_Geometry(options)
         if not geometry_faces:
@@ -505,6 +591,9 @@ if view_type == ViewType.FloorPlan:
                     print("Failed for Floor {}" .format(floor.Id))
                     continue
 
+
+
+       
 if view_type == ViewType.CeilingPlan:
 
     spot_dimension_collector = FilteredElementCollector(doc).OfClass(SpotDimensionType).WhereElementIsElementType()
