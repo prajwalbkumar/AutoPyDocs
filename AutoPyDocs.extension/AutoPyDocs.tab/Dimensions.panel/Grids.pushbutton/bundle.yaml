@@ -26,6 +26,8 @@ tooltip:
 
     2. Choose the relevant views from the list of views displayed on the sheet for the specified view type.
 
+    3. If the grids are already aligned, selece 'No, only dimesnion grids', or otherwise.
+
 
     Note: Only views already placed on sheets are included in the selection. Views not on sheets are excluded.
 
@@ -35,7 +37,7 @@ tooltip:
         
     Changelog:
     
-
+    - v1.0.0 [16.12.2024]  Option to give distances from crop region added.
     - v0.0.4 [10.10.2024]  Element ownership filter added.
     
     - v0.0.3 [30.09.2024]  Integrated grid alignment and grid bubble flipping features into the script.

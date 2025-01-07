@@ -1,0 +1,54 @@
+title: "Levels"
+
+# context:
+#   - Walls
+#   - Text Notes
+
+tooltip:   
+ en_us: >-
+    Version   =   0.0.1
+    
+    Date       =   16.12.2024
+
+    ________________________________________________________________
+        
+    Tool Description:
+
+
+    This tool streamlines levels alignment, flips levels tags to the standard side, and automatically generates linear dimensions for levels within selected views.
+
+    ________________________________________________________________
+        
+    How-To Guide:
+
+
+    1. Click the "Levels" button. You will be prompted to choose the View Type, which filters corresponding views on the sheet.
+
+    2. Choose the relevant views from the list of views displayed on the sheet for the specified view type.
+
+    3. If the levels are already aligned, selece 'No, only dimesnion levels', or otherwise.
+
+
+    Note: Only views already placed on sheets are included in the selection. Views not on sheets are excluded.
+
+    Delete existing levels dimensions for the selected views to avoid duplication.
+
+    ________________________________________________________________
+        
+    Changelog:
+    
+
+    - v0.0.1 [16.12.2024]  Initial testing phase.
+    
+    ________________________________________________________________
+
+# highlight: new
+highlight: updated
+
+help_url: "https://darcairo.sharepoint.com/sites/DARC/SitePages/Dimension-Levels.aspx"
+
+author: 
+  - Roma Ramnani
+# authors:
+#   - John Doe
+#   - Jane Doe

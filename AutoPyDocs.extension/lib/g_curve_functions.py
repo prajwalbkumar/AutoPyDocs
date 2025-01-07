@@ -123,7 +123,6 @@ def normal_line(s):
     nl = Line.CreateBound(m, m + n)
     return nl
 
-
 def normalize_vector(vec):
     length = vec.GetLength()
     if length == 0:
@@ -261,3 +260,23 @@ def refLine(points):
     end = points[n]
     dim_ref = DB.Line.CreateBound(start, end)
     return  dim_ref
+
+# Function to check if an edge belongs to a door or window opening
+def is_edge_in_opening(edge, doc):
+    # Get the elements adjacent to the edge
+    adjacent_faces = [edge.GetFace(0), edge.GetFace(1)]
+    
+    # Check if any adjacent face belongs to a door or window category
+    for face in adjacent_faces:
+        ref = face.Reference
+        if ref:
+            elem = doc.GetElement(ref.ElementId)
+            if elem.Category:
+                print(elem.Category.Id.IntegerValue)
+                if elem.Category.Id.IntegerValue in [
+                    BuiltInCategory.OST_Doors,
+                    BuiltInCategory.OST_Windows,
+                ]:
+                    return True
+                else:
+                    return False

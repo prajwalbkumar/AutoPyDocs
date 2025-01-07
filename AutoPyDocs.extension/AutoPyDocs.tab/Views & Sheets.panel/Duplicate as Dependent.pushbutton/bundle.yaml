@@ -1,0 +1,55 @@
+title: "Duplicate as Dependent"
+
+# context:
+#   - Walls
+#   - Text Notes
+
+tooltip:   
+  en_us: >-
+    Version   =   0.0.1
+    
+    Date       =   21.10.2024
+
+    ________________________________________________________________
+    
+    
+    Description:
+
+
+    
+    This tool allows you to duplicate dependent views for selected sheets in bulk.
+
+    ________________________________________________________________
+    
+    
+    How-To:
+
+      1. Select Views: Choose the relevant views for duplication.
+
+      2. Input Number of duplicates: Input number of duplicates required.
+
+      3. Create Views: Run the tool to now generate duplicated dependent views.
+
+
+    ________________________________________________________________
+    
+    
+    Changelog:
+    
+    
+    - 
+
+    - [21.10.2024] v0.0.1 First Testing
+    
+    ________________________________________________________________
+
+highlight: new
+# highlight: updated
+
+help_url: "https://darcairo.sharepoint.com/sites/DARC/SitePages/Create-Floor-Plans.aspx"
+
+author: 
+  - Abhiram Nair
+# authors:
+#   - John Doe
+#   - Jane Doe

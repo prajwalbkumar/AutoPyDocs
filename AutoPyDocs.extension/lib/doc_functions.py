@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
-# __Title__ = " Doc Functions"
+'''doc_functions'''
+__Title__ = " doc_functions"
 __author__ = "romaramnani"
 __doc__ = 'Functions on document to refer in main scripts.'
 
@@ -41,10 +42,15 @@ def get_view_on_sheets(doc, view_types):
     if not selected_view_type_names:
         forms.alert("No view type was selected. Exiting script.", 
                     exitscript=True)
+        
     selected_view_types = [view_types[name] 
                         for name in selected_view_type_names 
                         if name in view_types] # Convert the selected view type names to their corresponding ViewType enums
 
+    if not selected_view_types:
+        forms.alert("No view was selected. Exiting script.", 
+                    exitscript=True)
+        
     # Collect all views in the document
     views_collector = FilteredElementCollector(doc).OfClass(View)
 
@@ -96,17 +102,21 @@ def filter_element_ownership(doc, collected_elements):
         elements_to_checkout.Add(element_id)
         #print (type(element_id))
 
-    WorksharingUtils.CheckoutElements(doc, elements_to_checkout)
+    if doc.IsWorkshared:
+        WorksharingUtils.CheckoutElements(doc, elements_to_checkout)
+        
+        for element in collected_elements:    
+            worksharingStatus = WorksharingUtils.GetCheckoutStatus(doc, element.Id)
+            if not worksharingStatus == CheckoutStatus.OwnedByOtherUser:
+                owned_elements.append(element)
     
-    for element in collected_elements:    
-        worksharingStatus = WorksharingUtils.GetCheckoutStatus(doc, element.Id)
-        if not worksharingStatus == CheckoutStatus.OwnedByOtherUser:
-            owned_elements.append(element)
- 
-        else:
-            unowned_elements.append(element) 
-    #print("owned : {}".format(owned_elements))
-
+            else:
+                unowned_elements.append(element) 
+        #print("owned : {}".format(owned_elements))
+           
+    else:
+        owned_elements = collected_elements
+        
     unowned_element_data = []
     if unowned_elements:
         for element in unowned_elements:
@@ -114,6 +124,7 @@ def filter_element_ownership(doc, collected_elements):
                 unowned_element_data.append([output.linkify(element.Id), element.Category.Name.upper(), "REQUEST OWNERSHIP", WorksharingUtils.GetWorksharingTooltipInfo(doc, element.Id).Owner])
             except:
                 pass
+            
         #print("unowned : {}".format(unowned_elements))
         output.print_md("##⚠️ Elements Skipped ☹️") # Markdown Heading 2
         output.print_md("---") # Markdown Line Break
@@ -121,25 +132,5 @@ def filter_element_ownership(doc, collected_elements):
         output.print_table(table_data = unowned_element_data, columns=["ELEMENT ID", "CATEGORY", "TO-DO", "CURRENT OWNER"]) # Print a Table
         print("\n\n")
         output.print_md("---") # Markdown Line Break
-
+    
     return owned_elements
-    
-# Function to check if an edge belongs to a door or window opening
-def is_edge_in_opening(edge, doc):
-    # Get the elements adjacent to the edge
-    adjacent_faces = [edge.GetFace(0), edge.GetFace(1)]
-    
-    # Check if any adjacent face belongs to a door or window category
-    for face in adjacent_faces:
-        ref = face.Reference
-        if ref:
-            elem = doc.GetElement(ref.ElementId)
-            if elem.Category:
-                print(elem.Category.Id.IntegerValue)
-                if elem.Category.Id.IntegerValue in [
-                    BuiltInCategory.OST_Doors,
-                    BuiltInCategory.OST_Windows,
-                ]:
-                    return True
-                else:
-                    return False
