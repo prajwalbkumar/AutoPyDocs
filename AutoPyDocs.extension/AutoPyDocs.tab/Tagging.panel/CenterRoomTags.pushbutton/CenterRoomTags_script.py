@@ -204,24 +204,33 @@ def is_point_inside_boundary(point, boundary_points):
 linked_instances = FilteredElementCollector(doc).OfClass(RevitLinkInstance).ToElements()
 linked_instance_dict = {link.Name: link for link in linked_instances}
 
-# Display a selection dialog for linked models
-selected_link_name = forms.SelectFromList.show(
-    sorted(linked_instance_dict.keys()),
-    title="Select Linked Model Containing Rooms",
-    multiselect=False,
-    button_name="Select"
-)
+if linked_instances:
+    documentation_file = forms.alert("Is this a Documentation File or a Live File", warn_icon=False, options=["Documentation File", "Live File"])
 
-if not selected_link_name:
-    # Exit if no link is selected
-    forms.alert("No linked model selected. Exiting script.", title="Selection Cancelled", exitscript=True)
+    if not documentation_file:
+        forms.alert("No file option selected. Exiting script.", exitscript=True)
+
+    if documentation_file == "Documentation File":
+        # Display a selection dialog for linked models
+        selected_link_name = forms.SelectFromList.show(sorted(linked_instance_dict.keys()),title="Select Linked Model Containing Rooms",multiselect=False,button_name="Select")
+
+        if not selected_link_name:
+            # Exit if no link is selected
+            forms.alert("No linked model selected. Exiting script.", title="Selection Cancelled", exitscript=True)
+        else:
+            # Get the selected linked instance
+            selected_link_instance = linked_instance_dict[selected_link_name]
+
+            linked_instance = selected_link_instance
+            link_doc = selected_link_instance.GetLinkDocument()
+
+    
+    else:
+        linked_instance = None
+        link_doc = None
 else:
-    # Get the selected linked instance
-    selected_link_instance = linked_instance_dict[selected_link_name]
-    link_instance = selected_link_instance
-    link_doc = selected_link_instance.GetLinkDocument()
-
-
+    linked_instance = None
+    link_doc = None
 
 tg = TransactionGroup(doc, "Place Room Tags")
 tg.Start()
@@ -270,17 +279,12 @@ for view in selected_views:
 
     # Collect all rooms visible in the active view from linked models
     linked_rooms = []
-    if link_doc:
+    if linked_instance:
         linked_rooms += FilteredElementCollector(link_doc, view.Id).OfCategory(BuiltInCategory.OST_Rooms).WhereElementIsNotElementType().ToElements()
 
-
-   # Combine current and linked rooms into a single list
-    rooms_in_view = list(current_rooms) + linked_rooms  
-
-    
+    all_rooms = list(current_rooms) + linked_rooms
     # Collect all room tags in the active view
     for tag in owned_elements:
-
         tag_location = tag.Location.Point
         room = tag.Room
         if tag.HasLeader:
@@ -295,9 +299,11 @@ for view in selected_views:
     updated_room_tags = FilteredElementCollector(doc, view.Id).OfCategory(BuiltInCategory.OST_RoomTags).WhereElementIsNotElementType().ToElements()
     tagged_room_ids = set(tag.Room.Id for tag in updated_room_tags if hasattr(tag, "Room") and tag.Room)
 
-    for room in rooms_in_view:
+    for room in all_rooms:
+
         # Skip if the room is already tagged
         if room.Id in tagged_room_ids:
+
             continue
 
         location = room.Location
@@ -305,7 +311,8 @@ for view in selected_views:
         room_center_uv = UV(room_center.X, room_center.Y)
         room_tag = doc.Create.NewRoomTag(LinkElementId(room.Id),room_center_uv,view.Id)
 
-        if link_doc:
+        if linked_instance:
+
             has_tag_inside = False
             for tag in updated_room_tags:
                 if tag.HasLeader:  # For tags with a leader
@@ -324,7 +331,7 @@ for view in selected_views:
             if has_tag_inside:
                     continue
             else:
-                room_tag = doc.Create.NewRoomTag(LinkElementId(link_instance.Id, room.Id),room_center_uv,view.Id)
+                room_tag = doc.Create.NewRoomTag(LinkElementId(linked_instance.Id, room.Id),room_center_uv,view.Id)
 
 
 
@@ -338,6 +345,7 @@ for view in selected_views:
     all_room_tags = FilteredElementCollector(doc, view.Id).OfCategory(BuiltInCategory.OST_RoomTags).WhereElementIsNotElementType().ToElements()
 
     for tag in all_room_tags:
+
         if tag.HasLeader:  # Skip tags with leaders
             continue
 
@@ -367,7 +375,7 @@ for view in selected_views:
                                         if room.IsPointInRoom(room_center):
                                             move_room_and_tag(tag, room, room_center)
                                         location = room.Location
-                                        if not link_instance:
+                                        if not linked_instance:
                                             if location:
                                                 location.Point = room_center
                                             else:
@@ -410,11 +418,6 @@ for view in selected_views:
                                         ignored_rooms.append(room)
                     break
         else:
-
-             for linked_room in current_rooms:
-                    room = linked_room
-
-
                     boundary_segments = room.GetBoundarySegments(SpatialElementBoundaryOptions())
 
                     if not boundary_segments:
