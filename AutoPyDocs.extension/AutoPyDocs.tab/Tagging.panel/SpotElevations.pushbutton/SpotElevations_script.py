@@ -40,6 +40,31 @@ header_data = " | ".join([
     datetime.now().strftime("%Y-%m-%d %H:%M:%S"), rvt_year, tool_name, model_name, user_name
 ])
 
+
+
+def intersecting_geometries(element_list, options):
+    intersecting_elements = []
+    intersection_option = SolidCurveIntersectionOptions()
+    for el in element_list:
+        intersection_toggle = False 
+        for solid in solids:
+            if intersection_toggle == True:
+                break             
+            geometries = el.get_Geometry(options)
+            if geometries:
+                for geom in geometries:
+                    if intersection_toggle == True:
+                        break
+                    for edge in geom.Edges:
+                        curve = edge.AsCurve()
+                        intersection_result = solid.IntersectWithCurve(curve,intersection_option)
+                        if intersection_result.SegmentCount > 0:
+                            intersecting_elements.append(el)
+                            intersection_toggle = True
+                            break
+
+    return intersecting_elements
+
 def calculate_triangle_area(pt1, pt2, pt3):
     AB = pt2 - pt1
     AC = pt3 - pt1
@@ -63,14 +88,12 @@ def triangulate_point(face):
 
     return centroid
 
-
 def get_faces(solid):
     faces = []
     all_faces = solid.Faces
     for face in all_faces:
         faces.append(face)
     return faces
-
 
 def get_upper_faces(stair, stair_geometry):
     upper_faces = []
@@ -105,6 +128,11 @@ def get_upper_faces(stair, stair_geometry):
 view = doc.ActiveView
 view_scale = str(view.Scale)
 view_type = view.ViewType
+
+options = Options()
+options.View = view
+options.IncludeNonVisibleObjects = True
+options.ComputeReferences = True
 
 
 linked_instance = FilteredElementCollector(doc).OfClass(RevitLinkInstance).ToElements()
@@ -263,6 +291,99 @@ if linked_instance:
 
             ar_rooms = FilteredElementCollector(ar_doc).OfCategory(BuiltInCategory.OST_Rooms).WhereElementIsNotElementType().ToElements()
             filtered_ar_rooms = [room for room in ar_rooms if room.LevelId == ar_view_level_id]
+
+        if view_type == ViewType.Section:
+            view_crop_loop = view.GetCropRegionShapeManager().GetCropShape()
+            solids = []
+
+            for loop in view_crop_loop:
+                solid = GeometryCreationUtilities.CreateExtrusionGeometry([loop], view.ViewDirection, 1)
+
+                # # Set the category for the DirectShape (use Generic Models as an example)
+                # category = ElementId(BuiltInCategory.OST_GenericModel)
+                
+                # # Start a transaction to create the DirectShape
+                # t = Transaction(doc, "Create DirectShape")
+                # t.Start()
+                
+                # # Create the DirectShape
+                # direct_shape = DirectShape.CreateElement(doc, category)
+                # direct_shape.ApplicationId = "CustomAppId"
+                # direct_shape.ApplicationDataId = "CustomDataId"
+                
+                # # Assign the solid geometry to the DirectShape
+                # direct_shape.SetShape([solid])
+
+                # t.Commit()
+
+                solids.append(solid)
+
+            # Collect all AI Floor Finishes and Ceilings
+            ai_instance_name = forms.SelectFromList.show(link_name, title = "Select Linked AI File Containing Floor Finishes and Ceilings", width=600, height=600, button_name="Select File", multiselect=False)
+            if not ai_instance_name:
+                script.exit()
+
+            for link in linked_instance:
+                if ai_instance_name == link.Name:
+                    ai_instance = link
+                    break
+            
+
+            ai_doc = ai_instance.GetLinkDocument()
+            if not ai_doc:
+                forms.alert("No instance found of the selected link.\n"
+                            "Use Manage Links to Load the Link in the active document!", title = "Link Missing", warn_icon = True)
+                script.exit()
+                
+            ai_floor_finishes = FilteredElementCollector(ai_doc).OfCategory(BuiltInCategory.OST_Floors).WhereElementIsNotElementType().ToElements()
+            filtered_ai_floor_finishes = intersecting_geometries(ai_floor_finishes, options)
+        
+            ai_ceiling_finishes = FilteredElementCollector(ai_doc).OfCategory(BuiltInCategory.OST_Ceilings).ToElements()
+            filtered_ai_ceiling_finishes = intersecting_geometries(ai_ceiling_finishes, options)
+
+            # Collect all ST / SC Floors
+            st_instance_name = forms.SelectFromList.show(link_name, title = "Select Linked ST File Containing Floor Slabs", width=600, height=600, button_name="Select File", multiselect=False)
+            if not st_instance_name:
+                script.exit()
+
+            for link in linked_instance:
+                if st_instance_name == link.Name:
+                    st_instance = link
+                    break
+            
+            st_doc = st_instance.GetLinkDocument()
+            if not st_doc:
+                forms.alert("No instance found of the selected link.\n"
+                            "Use Manage Links to Load the Link in the active document!", title = "Link Missing", warn_icon = True)
+                script.exit()
+            
+            st_floors = FilteredElementCollector(st_doc).OfCategory(BuiltInCategory.OST_Floors).WhereElementIsNotElementType().ToElements()
+            intersecting_st_floors = intersecting_geometries(st_floors, options)
+
+            
+            filtered_st_floors = [floor for floor in intersecting_st_floors if not "PT" in floor.Name.upper()]
+            filtered_pt_floors = [floor for floor in intersecting_st_floors if "PT" in floor.Name.upper()]
+
+            ######################################################
+            # Collect all AR Rooms
+            ar_instance_name = forms.SelectFromList.show(link_name, title = "Select Linked AR File Containing Rooms and Staircases", width=600, height=600, button_name="Select File", multiselect=False)
+            if not ar_instance_name:
+                script.exit()
+
+            for link in linked_instance:
+                if ar_instance_name == link.Name:
+                    ar_instance = link
+                    break
+            
+
+            ar_doc = ar_instance.GetLinkDocument()
+            if not ar_doc:
+                forms.alert("No instance found of the selected link.\n"
+                            "Use Manage Links to Load the Link in the active document!", title = "Link Missing", warn_icon = True)
+                script.exit()
+
+            ar_rooms = FilteredElementCollector(ar_doc).OfCategory(BuiltInCategory.OST_Rooms).ToElements()
+            filtered_ar_rooms = intersecting_geometries(ar_rooms, options)
 
     else:
         linked_instance = None
@@ -590,9 +711,6 @@ if view_type == ViewType.FloorPlan:
                 except:
                     print("Failed for Floor {}" .format(floor.Id))
                     continue
-
-
-
        
 if view_type == ViewType.CeilingPlan:
 
@@ -670,5 +788,71 @@ if view_type == ViewType.CeilingPlan:
 
         else:
             print("failed ceiling reference")
-   
+
+if view_type == ViewType.Section:
+
+    all_floors = []
+    all_floors += filtered_ai_floor_finishes
+    all_floors += filtered_ai_ceiling_finishes
+    all_floors += filtered_pt_floors
+    all_floors += filtered_st_floors
+
+    def spot_elevation(slabs, instance):
+        for slab in slabs:
+            if not slab.LookupParameter("Height Offset From Level").AsDouble() == 0:
+                options = Options()
+                options.View = view
+                options.IncludeNonVisibleObjects = True
+                options.ComputeReferences = True
+
+                geometry_faces = slab.get_Geometry(options)
+                if not geometry_faces:
+                    # print("No geometry for floor:", floor.Id)
+                    continue
+
+                reference = None
+                point = None
+
+                for geom_obj in geometry_faces:
+                    if hasattr(geom_obj, "Faces"):
+                        solid = geom_obj
+                        for face in solid.Faces:
+                            try:
+                                if face.FaceNormal.Z == 1 and face.Reference:
+                                    edgeloops = face.EdgeLoops
+                                    for loop in edgeloops:
+                                        for edge in loop:
+                                            # if edge.AsCurve().Direction.IsAlmostEqualTo(view.RightDirection):
+                                            # if edge.AsCurve().Direction.IsAlmostEqualTo(XYZ(0,0,1).CrossProduct(view.RightDirection)):
+                                            if edge.AsCurve().Direction.IsAlmostEqualTo(view.RightDirection.CrossProduct(XYZ(0,0,1))):
+                                                if linked_instance:
+                                                    reference = edge.Reference.CreateLinkReference(instance)
+                                                    point = edge.AsCurve().GetEndPoint(1) - edge.AsCurve().GetEndPoint(0)
+                                                    # print(edge.AsCurve().Direction)
+                                                    # print(view.RightDirection)
+                                                    break
+                                    break
+                            except:
+                                continue
+
+                    if reference:
+                        break
+
+                # Ensure point aligns with the reference
+                # try:
+                bendpt = point + XYZ(0,0,5)
+                endpt = bendpt + view.RightDirection * 3
+                ceiling_spot_elevation = doc.Create.NewSpotElevation(view, reference, point, point, point, point, False)
+                # print(point, bendpt, endpt)
+                # ceiling_spot_elevation.DimensionType = ffl_spot_dimension_type
+
+                # except:
+                #     print("Failed for Floor {}" .format(floor.Id))
+                #     continue
+
+    spot_elevation(filtered_ai_floor_finishes, ai_instance)
+    spot_elevation(filtered_ai_ceiling_finishes, ai_instance)
+    spot_elevation(filtered_pt_floors, st_instance)
+    spot_elevation(filtered_st_floors, st_instance)
+
 t.Commit()

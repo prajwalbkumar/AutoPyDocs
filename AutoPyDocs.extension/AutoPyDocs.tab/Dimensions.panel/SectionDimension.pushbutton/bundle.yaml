@@ -1,0 +1,53 @@
+title: "Section"
+
+# context:
+#   - Walls
+#   - Text Notes
+
+tooltip:   
+ en_us: >-
+    Version   =   0.0.1
+    
+    Date       =   07.11.2024
+
+    ________________________________________________________________
+        
+    Tool Description:
+
+
+    This tool automatically generates linear dimensions for rooms within selected section views. 
+
+    ________________________________________________________________
+        
+    How-To Guide:
+
+
+    1. Click the "Rooms" button. You will be prompted to select where your rooms are: in current model or in linked model.
+    
+    2. You will need to select the type of width to dimension & then you will be prompted to choose the View Type, which filters corresponding views on the sheet.
+
+    3. Select all rooms by clicking "Check All" or select the particular rooms that need dimensioning.
+
+    Note: Only views already placed on sheets are included in the selection. Views not on sheets are excluded.
+
+    Delete existing room dimensions for the selected views to avoid duplication.
+
+    ________________________________________________________________
+        
+    Changelog:
+    
+
+    - v0.0.1 [14.11.2024]  Initial testing phase.
+    
+    ________________________________________________________________
+
+highlight: new
+# highlight: updated
+
+help_url: "https://darcairo.sharepoint.com/sites/DARC/SitePages/Dimension-Rooms.aspx"
+
+author: 
+  - Prajwal B Kumar
+# authors:
+#   - John Doe
+#   - Jane Doe
