@@ -125,542 +125,318 @@ def get_upper_faces(stair, stair_geometry):
         return upper_faces
      
 
-view = doc.ActiveView
-view_scale = str(view.Scale)
-view_type = view.ViewType
+# Define all possible view types for selection
+all_view_types = {
+    'Floor Plans': ViewType.FloorPlan,
+    'Reflected Ceiling Plans': ViewType.CeilingPlan,
+    'Section' : ViewType.Section
+}
 
-options = Options()
-options.View = view
-options.IncludeNonVisibleObjects = True
-options.ComputeReferences = True
+# Show a dialog box for selecting desired view types
+selected_view_type_names = forms.SelectFromList.show(
+    sorted(all_view_types.keys()),            
+    title='Select View Types',                
+    multiselect=True                           
+)
+if not selected_view_type_names:
+    forms.alert("No view type was selected. Exiting script.", exitscript=True)
+selected_view_types = [all_view_types[name]
+                        for name in selected_view_type_names
+                        if name in all_view_types]
+
+# Collect all views in the document
+views_collector = FilteredElementCollector(doc).OfClass(View)
+
+# Filter views by the selected types
+filtered_views = [view for view in views_collector
+                    if view.ViewType in selected_view_types
+                    and not view.IsTemplate]
+if not filtered_views:
+    forms.alert("No views of the selected types were found in the document.", exitscript=True)
+
+# Collect all Viewport elements in the document
+viewports_collector = FilteredElementCollector(doc).OfClass(Viewport)
+views_on_sheets_ids = {viewport.ViewId for viewport in viewports_collector}
+filtered_views_on_sheets = [
+    view for view in filtered_views
+    if view.Id in views_on_sheets_ids
+]
+if not filtered_views_on_sheets:
+    forms.alert("No views of the selected types were found on sheets in the document.", exitscript=True)
+
+view_dict = {view.Name: view for view in filtered_views_on_sheets}
+
+# Show the selection window for the user to choose views
+selected_view_names = forms.SelectFromList.show(
+    sorted(view_dict.keys()),         
+    title='Select Views',             
+    multiselect=True                  
+)
+
+if selected_view_names:
+    selected_views = [view_dict[name] for name in selected_view_names]
+else:
+    forms.alert("No views were selected.", exitscript=True)
 
 
 linked_instance = FilteredElementCollector(doc).OfClass(RevitLinkInstance).ToElements()
 if linked_instance:
-    documentation_file = forms.alert("Is this a Documentation File or a Live File", warn_icon=False, options=["Documentation File", "Model File"])
+    # documentation_file = forms.alert("Is this a Documentation File or a Live File", warn_icon=False, options=["Documentation File", "Model File"])
 
-    if not documentation_file:
-        forms.alert("No file option selected. Exiting script.", exitscript=True)
+    # if not documentation_file:
+    #     forms.alert("No file option selected. Exiting script.", exitscript=True)
 
+    documentation_file = "Documentation File"
+    
     if documentation_file == "Documentation File":
         link_name = []
         for link in linked_instance:
             link_name.append(link.Name)
-
-        if view_type == ViewType.CeilingPlan:
-            # Collect all AI Floor Finishes
-            ai_instance_name = forms.SelectFromList.show(link_name, title = "Select Linked AI File Containing Ceiling", width=600, height=600, button_name="Select File", multiselect=False)
-            if not ai_instance_name:
-                script.exit()
-
-            for link in linked_instance:
-                if ai_instance_name == link.Name:
-                    ai_instance = link
-                    break
             
+        # AI LINK DETAILS
+        ai_instance_name = forms.SelectFromList.show(link_name, title = "Select Linked AI File Containing Ceiling", width=600, height=600, button_name="Select File", multiselect=False)
+        if not ai_instance_name:
+            script.exit()
 
-            ai_doc = ai_instance.GetLinkDocument()
-            if not ai_doc:
-                forms.alert("No instance found of the selected link.\n"
-                            "Use Manage Links to Load the Link in the active document!", title = "Link Missing", warn_icon = True)
-                script.exit()
-
-            views_in_ai_link = FilteredElementCollector(ai_doc).OfCategory(BuiltInCategory.OST_Views).WhereElementIsNotElementType().ToElements()
-
-            for link_view in views_in_ai_link:
-                if link_view.Name == "3D-Navisworks-Export":
-                    geom_view = link_view
-                    break
-
-            
-            live_view_level_name = doc.GetElement(view.GenLevel.Id).Name
-            
-            link_levels = FilteredElementCollector(ai_doc).OfCategory(BuiltInCategory.OST_Levels).WhereElementIsNotElementType().ToElements()
-
-            for level in link_levels:
-                if level.Name == live_view_level_name:
-                    ai_view_level_id = level.Id
-                    break
-            
-            ai_ceiling_finishes = FilteredElementCollector(ai_doc).OfCategory(BuiltInCategory.OST_Ceilings).WherePasses(ElementLevelFilter(ai_view_level_id)).ToElements()
-
-        if view_type == ViewType.FloorPlan:
-            # Collect all AI Floor Finishes
-            ai_instance_name = forms.SelectFromList.show(link_name, title = "Select Linked AI File Containing Floor Finishes", width=600, height=600, button_name="Select File", multiselect=False)
-            if not ai_instance_name:
-                script.exit()
-
-            for link in linked_instance:
-                if ai_instance_name == link.Name:
-                    ai_instance = link
-                    break
-            
-
-            ai_doc = ai_instance.GetLinkDocument()
-            if not ai_doc:
-                forms.alert("No instance found of the selected link.\n"
-                            "Use Manage Links to Load the Link in the active document!", title = "Link Missing", warn_icon = True)
-                script.exit()
-
-            views_in_ai_link = FilteredElementCollector(ai_doc).OfCategory(BuiltInCategory.OST_Views).WhereElementIsNotElementType().ToElements()
-
-            for link_view in views_in_ai_link:
-                if link_view.Name == "3D-Navisworks-Export":
-                    geom_view = link_view
-                    break
-
-            
-            live_view_level_name = doc.GetElement(view.GenLevel.Id).Name
-            
-            link_levels = FilteredElementCollector(ai_doc).OfCategory(BuiltInCategory.OST_Levels).WhereElementIsNotElementType().ToElements()
-
-            for level in link_levels:
-                if level.Name == live_view_level_name:
-                    ai_view_level_id = level.Id
-                    break
-            
-            ai_floor_finishes = FilteredElementCollector(ai_doc).OfCategory(BuiltInCategory.OST_Floors).WherePasses(ElementLevelFilter(ai_view_level_id)).ToElements()
-
-            ######################################################
-            # Collect all ST / SC Floors
-            st_instance_name = forms.SelectFromList.show(link_name, title = "Select Linked ST File Containing Floor Slabs", width=600, height=600, button_name="Select File", multiselect=False)
-            if not st_instance_name:
-                script.exit()
-
-            for link in linked_instance:
-                if st_instance_name == link.Name:
-                    st_instance = link
-                    break
-            
-
-            st_doc = st_instance.GetLinkDocument()
-            if not st_doc:
-                forms.alert("No instance found of the selected link.\n"
-                            "Use Manage Links to Load the Link in the active document!", title = "Link Missing", warn_icon = True)
-                script.exit()
-
-            views_in_st_link = FilteredElementCollector(st_doc).OfCategory(BuiltInCategory.OST_Views).WhereElementIsNotElementType().ToElements()
-
-            for link_view in views_in_st_link:
-                if link_view.Name == "3D-Navisworks-Export":
-                    geom_view = link_view
-                    break
-
-            
-            link_levels = FilteredElementCollector(st_doc).OfCategory(BuiltInCategory.OST_Levels).WhereElementIsNotElementType().ToElements()
-            live_view_level_elevation = doc.GetElement(view.GenLevel.Id).Elevation
-            for level in link_levels:
-                if level.Elevation < live_view_level_elevation and level.Elevation > live_view_level_elevation - 2:
-                    st_view_level_id = level.Id
-                    break
-            
-            st_floors = FilteredElementCollector(st_doc).OfCategory(BuiltInCategory.OST_Floors).WherePasses(ElementLevelFilter(st_view_level_id)).ToElements()
-            
-            st_floor_finishes = [floor for floor in st_floors if not "PT" in floor.Name.upper()]
-            pt_floor_finishes = [floor for floor in st_floors if "PT" in floor.Name.upper()]
-
-            # print(len(st_floors))
-            # print(len(st_floor_finishes))
-            # print(len(pt_floor_finishes))
-            ######################################################
-            # Collect all AR Rooms
-            ar_instance_name = forms.SelectFromList.show(link_name, title = "Select Linked AR File Containing Rooms and Staircases", width=600, height=600, button_name="Select File", multiselect=False)
-            if not ar_instance_name:
-                script.exit()
-
-            for link in linked_instance:
-                if ar_instance_name == link.Name:
-                    ar_instance = link
-                    break
-            
-
-            ar_doc = ar_instance.GetLinkDocument()
-            if not ar_doc:
-                forms.alert("No instance found of the selected link.\n"
-                            "Use Manage Links to Load the Link in the active document!", title = "Link Missing", warn_icon = True)
-                script.exit()
-
-            
-            link_levels = FilteredElementCollector(ar_doc).OfCategory(BuiltInCategory.OST_Levels).WhereElementIsNotElementType().ToElements()
-
-            for level in link_levels:
-                if level.Name == live_view_level_name:
-                    ar_view_level_id = level.Id
-                    break
-
-
-            ar_rooms = FilteredElementCollector(ar_doc).OfCategory(BuiltInCategory.OST_Rooms).WhereElementIsNotElementType().ToElements()
-            filtered_ar_rooms = [room for room in ar_rooms if room.LevelId == ar_view_level_id]
-
-        if view_type == ViewType.Section:
-            view_crop_loop = view.GetCropRegionShapeManager().GetCropShape()
-            solids = []
-
-            for loop in view_crop_loop:
-                solid = GeometryCreationUtilities.CreateExtrusionGeometry([loop], view.ViewDirection, 1)
-
-                # # Set the category for the DirectShape (use Generic Models as an example)
-                # category = ElementId(BuiltInCategory.OST_GenericModel)
-                
-                # # Start a transaction to create the DirectShape
-                # t = Transaction(doc, "Create DirectShape")
-                # t.Start()
-                
-                # # Create the DirectShape
-                # direct_shape = DirectShape.CreateElement(doc, category)
-                # direct_shape.ApplicationId = "CustomAppId"
-                # direct_shape.ApplicationDataId = "CustomDataId"
-                
-                # # Assign the solid geometry to the DirectShape
-                # direct_shape.SetShape([solid])
-
-                # t.Commit()
-
-                solids.append(solid)
-
-            # Collect all AI Floor Finishes and Ceilings
-            ai_instance_name = forms.SelectFromList.show(link_name, title = "Select Linked AI File Containing Floor Finishes and Ceilings", width=600, height=600, button_name="Select File", multiselect=False)
-            if not ai_instance_name:
-                script.exit()
-
-            for link in linked_instance:
-                if ai_instance_name == link.Name:
-                    ai_instance = link
-                    break
-            
-
-            ai_doc = ai_instance.GetLinkDocument()
-            if not ai_doc:
-                forms.alert("No instance found of the selected link.\n"
-                            "Use Manage Links to Load the Link in the active document!", title = "Link Missing", warn_icon = True)
-                script.exit()
-                
-            ai_floor_finishes = FilteredElementCollector(ai_doc).OfCategory(BuiltInCategory.OST_Floors).WhereElementIsNotElementType().ToElements()
-            filtered_ai_floor_finishes = intersecting_geometries(ai_floor_finishes, options)
+        for link in linked_instance:
+            if ai_instance_name == link.Name:
+                ai_instance = link
+                break
         
-            ai_ceiling_finishes = FilteredElementCollector(ai_doc).OfCategory(BuiltInCategory.OST_Ceilings).ToElements()
-            filtered_ai_ceiling_finishes = intersecting_geometries(ai_ceiling_finishes, options)
 
-            # Collect all ST / SC Floors
-            st_instance_name = forms.SelectFromList.show(link_name, title = "Select Linked ST File Containing Floor Slabs", width=600, height=600, button_name="Select File", multiselect=False)
-            if not st_instance_name:
-                script.exit()
+        ai_doc = ai_instance.GetLinkDocument()
+        if not ai_doc:
+            forms.alert("No instance found of the selected link.\n"
+                        "Use Manage Links to Load the Link in the active document!", title = "Link Missing", warn_icon = True)
+            script.exit()
 
-            for link in linked_instance:
-                if st_instance_name == link.Name:
-                    st_instance = link
-                    break
+        ai_link_levels = FilteredElementCollector(ai_doc).OfCategory(BuiltInCategory.OST_Levels).WhereElementIsNotElementType().ToElements()
+
+
+        # ST LINK DETAILS
+        st_instance_name = forms.SelectFromList.show(link_name, title = "Select Linked ST File Containing Floor Slabs", width=600, height=600, button_name="Select File", multiselect=False)
+        if not st_instance_name:
+            script.exit()
+
+        for link in linked_instance:
+            if st_instance_name == link.Name:
+                st_instance = link
+                break
+        
+
+        st_doc = st_instance.GetLinkDocument()
+        if not st_doc:
+            forms.alert("No instance found of the selected link.\n"
+                        "Use Manage Links to Load the Link in the active document!", title = "Link Missing", warn_icon = True)
+            script.exit()
             
-            st_doc = st_instance.GetLinkDocument()
-            if not st_doc:
-                forms.alert("No instance found of the selected link.\n"
-                            "Use Manage Links to Load the Link in the active document!", title = "Link Missing", warn_icon = True)
-                script.exit()
-            
-            st_floors = FilteredElementCollector(st_doc).OfCategory(BuiltInCategory.OST_Floors).WhereElementIsNotElementType().ToElements()
-            intersecting_st_floors = intersecting_geometries(st_floors, options)
+        st_link_levels = FilteredElementCollector(st_doc).OfCategory(BuiltInCategory.OST_Levels).WhereElementIsNotElementType().ToElements()
 
-            
-            filtered_st_floors = [floor for floor in intersecting_st_floors if not "PT" in floor.Name.upper()]
-            filtered_pt_floors = [floor for floor in intersecting_st_floors if "PT" in floor.Name.upper()]
+        # AR LINK DETAILS
+        ar_instance_name = forms.SelectFromList.show(link_name, title = "Select Linked AR File Containing Rooms and Staircases", width=600, height=600, button_name="Select File", multiselect=False)
+        if not ar_instance_name:
+            script.exit()
 
-            ######################################################
-            # Collect all AR Rooms
-            ar_instance_name = forms.SelectFromList.show(link_name, title = "Select Linked AR File Containing Rooms and Staircases", width=600, height=600, button_name="Select File", multiselect=False)
-            if not ar_instance_name:
-                script.exit()
+        for link in linked_instance:
+            if ar_instance_name == link.Name:
+                ar_instance = link
+                break
+        
 
-            for link in linked_instance:
-                if ar_instance_name == link.Name:
-                    ar_instance = link
-                    break
-            
+        ar_doc = ar_instance.GetLinkDocument()
+        if not ar_doc:
+            forms.alert("No instance found of the selected link.\n"
+                        "Use Manage Links to Load the Link in the active document!", title = "Link Missing", warn_icon = True)
+            script.exit()
 
-            ar_doc = ar_instance.GetLinkDocument()
-            if not ar_doc:
-                forms.alert("No instance found of the selected link.\n"
-                            "Use Manage Links to Load the Link in the active document!", title = "Link Missing", warn_icon = True)
-                script.exit()
+        ar_link_levels = FilteredElementCollector(ar_doc).OfCategory(BuiltInCategory.OST_Levels).WhereElementIsNotElementType().ToElements()
 
-            ar_rooms = FilteredElementCollector(ar_doc).OfCategory(BuiltInCategory.OST_Rooms).ToElements()
-            filtered_ar_rooms = intersecting_geometries(ar_rooms, options)
+spot_dimension_collector = FilteredElementCollector(doc).OfClass(SpotDimensionType).WhereElementIsElementType()
+spot_dimension_type_names = [spot_dimension.LookupParameter("Type Name").AsValueString() for spot_dimension in spot_dimension_collector]
 
-    else:
-        linked_instance = None
-        ai_doc = doc
-        ar_doc = doc
-        view_level_id = view.GenLevel.Id
-        ai_floor_finishes = FilteredElementCollector(doc).OfCategory(BuiltInCategory.OST_Floors).WherePasses(ElementLevelFilter(view_level_id)).ToElements()
-        stair_collector = FilteredElementCollector(doc).OfCategory(BuiltInCategory.OST_Stairs).WhereElementIsNotElementType().ToElements()
-        filtered_stairs = [stair for stair in stair_collector if stair.LookupParameter("Base Level").AsElementId() == view_level_id] 
+ffl_type_names = [name for name in spot_dimension_type_names if "FFL" in name]
+cl_type_names = [name for name in spot_dimension_type_names if "CL" in name]
 
+ffl_spot_dimension_name = forms.SelectFromList.show(ffl_type_names, title = "Select FFL Tag Type", width=600, height=600, button_name="Select Tag Type", multiselect=False)
+cl_spot_dimension_name = forms.SelectFromList.show(cl_type_names, title = "Select CL Tag Type", width=600, height=600, button_name="Select Tag Type", multiselect=False)
 
-else:
-    linked_instance = None
-    ai_doc = doc
-    view_level_id = view.GenLevel.Id
-    ai_floor_finishes = FilteredElementCollector(doc).OfCategory(BuiltInCategory.OST_Floors).WherePasses(ElementLevelFilter(view_level_id)).ToElements()
+ffl_spot_dimension_type = [type for type in spot_dimension_collector if type.LookupParameter("Type Name").AsValueString() == ffl_spot_dimension_name]
+cl_spot_dimension_type = [type for type in spot_dimension_collector if type.LookupParameter("Type Name").AsValueString() == cl_spot_dimension_name]
 
-
+ffl_spot_dimension_type = ffl_spot_dimension_type[0]
+cl_spot_dimension_type = cl_spot_dimension_type[0]
 
 
 t = Transaction(doc, "Spot Elevation")
 t.Start()
 
-if view_type == ViewType.FloorPlan:
+for view in selected_views:
 
-    finish_candidates = []
-
-    spot_dimension_collector = FilteredElementCollector(doc).OfClass(SpotDimensionType).WhereElementIsElementType()
-    spot_dimension_type_names = [spot_dimension.LookupParameter("Type Name").AsValueString() for spot_dimension in spot_dimension_collector]
-
-    ffl_type_names = [name for name in spot_dimension_type_names if "FFL" in name and view_scale in name]
-    cl_type_names = [name for name in spot_dimension_type_names if "CL" in name and view_scale in name]
-
-    ffl_spot_dimension_name = forms.SelectFromList.show(ffl_type_names, title = "Select FFL Tag Type", width=600, height=600, button_name="Select Tag Type", multiselect=False)
-    cl_spot_dimension_name = forms.SelectFromList.show(cl_type_names, title = "Select CL Tag Type", width=600, height=600, button_name="Select Tag Type", multiselect=False)
-
-    ffl_spot_dimension_type = [type for type in spot_dimension_collector if type.LookupParameter("Type Name").AsValueString() == ffl_spot_dimension_name]
-    cl_spot_dimension_type = [type for type in spot_dimension_collector if type.LookupParameter("Type Name").AsValueString() == cl_spot_dimension_name]
-
-    ffl_spot_dimension_type = ffl_spot_dimension_type[0]
-    cl_spot_dimension_type = cl_spot_dimension_type[0]
-
-    consumed_origins = []
+    view_scale = str(view.Scale)
+    view_type = view.ViewType
 
     options = Options()
     options.View = view
     options.IncludeNonVisibleObjects = True
     options.ComputeReferences = True
-    
-    # for stair in filtered_stairs:
-    #     # Extract Landing Faces
-    #     stair_geometry = []
-    #     stair_landing_ids = stair.GetStairsLandings()
-    #     landing_faces = []
-    #     for landing_id in stair_landing_ids:
-    #         landing = ar_doc.GetElement(landing_id)
-    #         stair_geometry.append(landing.get_Geometry(options))
-
-    #     landing_faces = get_upper_faces(stair, stair_geometry)
-        
-    #     for face in landing_faces:
-    #         reference = Reference(stair)
-    #         # if linked_instance:
-    #         #     reference = face.Reference.CreateLinkReference(ar_instance)
-    #         # else:
-    #         #     reference = face.Reference
-    #         print(reference.ElementReferenceType)
-                
-    #         face_bbox = face.GetBoundingBox()
-    #         point = triangulate_point(face)
-    #         point = XYZ(point.X, point.Y + 6, point.Z)
-            
 
 
-    #         # Ensure point aligns with the reference
-    #         if reference is not None and point is not None:
-    #             projected_point = face.Project(point)
-    #             if projected_point and projected_point.XYZPoint:
-    #                 point = projected_point.XYZPoint
-    #                 print(point)
-    #             else:
-    #                 print("Point does not project properly on reference. Skipping...")
-    #                 continue
-
-    #             # print(f"Creating SpotElevation for Floor {floor.Id}")
-    #             # try:
-    #             print("Spotting")
-    #             ffl_spot_elevation = doc.Create.NewSpotElevation(view, reference, point, point, point, point, False)
-    #             ffl_spot_elevation.DimensionType = ffl_spot_dimension_type
-
-    #             # except:
-    #             #     print("Failed for Floor")
-    #             #     continue
-    
-
-    for floor in ai_floor_finishes:
-        floor_grade = round(floor.LookupParameter("Height Offset From Level").AsDouble(), 2)
-        if floor.LookupParameter("Area").AsDouble() < 40:
-            continue
-
-
-        geometry_faces = floor.get_Geometry(options)
-        if not geometry_faces:
-            # print("No geometry for floor:", floor.Id)
-            continue
-
-        reference = None
-        point = None
-
-        for geom_obj in geometry_faces:
-            if hasattr(geom_obj, "Faces"):
-                solid = geom_obj
-                for face in solid.Faces:
-                    try:
-                        if face.FaceNormal.Z == 1 and face.Reference:
-                            finish_candidates.append(face)
-                    except:
-                        continue
-
-
-        floor_bbox = floor.get_BoundingBox(view)
-        if floor_bbox is None:
-            continue
-
-        floor_outline = Outline(floor_bbox.Min, floor_bbox.Max)
-        # Inflate the bounding box manually by scaling the min and max points
-        scale_factor = 1.3  # Adjust scale factor as needed
-        bbox_min = floor_bbox.Min
-        bbox_max = floor_bbox.Max
-        inflated_min = XYZ(
-            bbox_min.X - (bbox_max.X - bbox_min.X) * (scale_factor - 1) / 2,
-            bbox_min.Y - (bbox_max.Y - bbox_min.Y) * (scale_factor - 1) / 2,
-            bbox_min.Z - (bbox_max.Z - bbox_min.Z) * (scale_factor * 10 - 1) / 2,
-        )
-        inflated_max = XYZ(
-            bbox_max.X + (bbox_max.X - bbox_min.X) * (scale_factor - 1) / 2,
-            bbox_max.Y + (bbox_max.Y - bbox_min.Y) * (scale_factor - 1) / 2,
-            bbox_max.Z + (bbox_max.Z - bbox_min.Z) * (scale_factor * 10 - 1) / 2,
-        )
-
-        floor_inflated_outline = Outline(inflated_min, inflated_max)
-
-        for adj_floor in ai_floor_finishes:
-            adj_floor_bbox = adj_floor.get_BoundingBox(view)
-            if adj_floor_bbox is None:
-                continue
-            adj_floor_outline = Outline(adj_floor_bbox.Min, adj_floor_bbox.Max)
-            if floor_inflated_outline.Intersects(adj_floor_outline, 0.1):
-                if round(adj_floor.LookupParameter("Height Offset From Level").AsDouble(), 2) == floor_grade:
-                    continue
-                else:
-                    geometry_faces = floor.get_Geometry(options)
-                    if not geometry_faces:
-                        # print("No geometry for floor:", floor.Id)
-                        continue
-
-                    reference = None
-                    point = None
-
-                    for geom_obj in geometry_faces:
-                        if hasattr(geom_obj, "Faces"):
-                            solid = geom_obj
-                            for face in solid.Faces:
-                                try:
-                                    if face.FaceNormal.Z == 1 and face.Reference:
-                                        finish_candidates.append(face)
-                                        if linked_instance:
-                                            reference = face.Reference.CreateLinkReference(ai_instance)
-                                        else:
-                                            reference = face.Reference
-                                            
-                                        face_bbox = face.GetBoundingBox()
-                                        # uv_point = (face_bbox.Min + face_bbox.Max)/2
-                                        # point = face.Evaluate(uv_point)
-                                        point = triangulate_point(face)
-                                        break
-                                except:
-                                    continue
-
-                        if reference:
-                            break
-
-                    # Ensure point aligns with the reference
-                    if reference is not None and point is not None:
-                        projected_point = face.Project(point)
-                        if projected_point and projected_point.XYZPoint:
-                            point = projected_point.XYZPoint
-                        else:
-                            # print("Point does not project properly on reference. Skipping...")
-                            continue
-
-                        # print(f"Creating SpotElevation for Floor {floor.Id}")
-                        try:
-                            consumed_origins.append(point)
-                            ffl_spot_elevation = doc.Create.NewSpotElevation(view, reference, point, point, point, point, False)
-                            ffl_spot_elevation.DimensionType = ffl_spot_dimension_type
-
-                        except:
-                            # print("Failed for Floor {}" .format(floor.Id))
-                            continue
-                break
 
     if linked_instance:
+        if documentation_file == "Documentation File":
+            if view_type == ViewType.CeilingPlan:
 
-        for room in filtered_ar_rooms:
-            # print("------")
+                live_view_level_name = doc.GetElement(view.GenLevel.Id).Name
+                live_view_level_elevation = doc.GetElement(view.GenLevel.Id).Elevation
+                
+                # Filtering AI Ceiling Finishes
 
-            room_finish = False
-            room_point = room.Location.Point
-
-            room_name = (room.LookupParameter("Name").AsValueString()).lower()
-
-            # print("-Processing-")
-
-
-            # z_room_point = XYZ(room_point.X, room_point.Y, room_point.Z + 1)
-            for face in finish_candidates:
-                try:
-                    projecton = face.Project(room_point)
-                    if projecton and projecton.XYZPoint: # If valid projection is returned, then the room contains a finish. break the loop and go to other room
-                        room_finish = True
+                for level in ai_link_levels:
+                    if level.Name == live_view_level_name:
+                        ai_view_level_id = level.Id
                         break
-                except:
-                    continue
-                    # print("None - None")
-            
-            else: 
-                for floor in st_floor_finishes:
-                    options = Options()
-                    options.View = view
-                    options.IncludeNonVisibleObjects = True
-                    options.ComputeReferences = True
+                
+                ai_ceiling_finishes = FilteredElementCollector(ai_doc).OfCategory(BuiltInCategory.OST_Ceilings).WherePasses(ElementLevelFilter(ai_view_level_id)).ToElements()
 
-                    geometry_faces = floor.get_Geometry(options)
-                    if not geometry_faces:
-                        # print("No geometry for floor:", floor.Id)
-                        continue
+            if view_type == ViewType.FloorPlan:
+
+                live_view_level_name = doc.GetElement(view.GenLevel.Id).Name
+                live_view_level_elevation = doc.GetElement(view.GenLevel.Id).Elevation
+
+                # Collect all AI Floor Finishes 
+                for level in ai_link_levels:
+                    if level.Name == live_view_level_name:
+                        ai_view_level_id = level.Id
+                        break
+                
+                ai_floor_finishes = FilteredElementCollector(ai_doc).OfCategory(BuiltInCategory.OST_Floors).WherePasses(ElementLevelFilter(ai_view_level_id)).ToElements()
+
+                # Collect all ST / SC Floors
+                for level in st_link_levels:
+                    if level.Elevation < live_view_level_elevation and level.Elevation > live_view_level_elevation - 2:
+                        st_view_level_id = level.Id
+                        break
+                
+                st_floors = FilteredElementCollector(st_doc).OfCategory(BuiltInCategory.OST_Floors).WherePasses(ElementLevelFilter(st_view_level_id)).ToElements()
+                
+                st_floor_finishes = [floor for floor in st_floors if not "PT" in floor.Name.upper()]
+                pt_floor_finishes = [floor for floor in st_floors if "PT" in floor.Name.upper()]
+
+        
+                # Collect all AR Rooms
+                for level in ar_link_levels:
+                    if level.Name == live_view_level_name:
+                        ar_view_level_id = level.Id
+                        break
+
+                ar_rooms = FilteredElementCollector(ar_doc).OfCategory(BuiltInCategory.OST_Rooms).WhereElementIsNotElementType().ToElements()
+                filtered_ar_rooms = [room for room in ar_rooms if room.LevelId == ar_view_level_id]
+
+            if view_type == ViewType.Section:
+                view_crop_loop = view.GetCropRegionShapeManager().GetCropShape()
+                solids = []
+
+                for loop in view_crop_loop:
+                    solid = GeometryCreationUtilities.CreateExtrusionGeometry([loop], view.ViewDirection, 1)
+
+                    solids.append(solid)
+
                     
-                    face = None
-                    reference = None
-                    for geom_obj in geometry_faces:
-                        if hasattr(geom_obj, "Faces"):
-                            solid = geom_obj
-                            for face in solid.Faces:
-                                if face.FaceNormal.Z == 1 and face.Reference:
-                                    if linked_instance:
-                                        reference = face.Reference.CreateLinkReference(st_instance)
-                                    else:
-                                        reference = face.Reference
-                                    break
-                        if reference:
-                            break
+                ai_floor_finishes = FilteredElementCollector(ai_doc).OfCategory(BuiltInCategory.OST_Floors).WhereElementIsNotElementType().ToElements()
+                filtered_ai_floor_finishes = intersecting_geometries(ai_floor_finishes, options)
+            
+                ai_ceiling_finishes = FilteredElementCollector(ai_doc).OfCategory(BuiltInCategory.OST_Ceilings).ToElements()
+                filtered_ai_ceiling_finishes = intersecting_geometries(ai_ceiling_finishes, options)
+                
+                st_floors = FilteredElementCollector(st_doc).OfCategory(BuiltInCategory.OST_Floors).WhereElementIsNotElementType().ToElements()
+                intersecting_st_floors = intersecting_geometries(st_floors, options)
 
-                    # Ensure point aligns with the reference
-                    if reference is not None:
-                        projected_point = face.Project(room_point)
-                        if projected_point and projected_point.XYZPoint:
-                            point = projected_point.XYZPoint
-                            # print(point)
-                        else:
-                            # print("Point does not project properly on reference. Skipping...")
-                            continue
+                filtered_st_floors = [floor for floor in intersecting_st_floors if not "PT" in floor.Name.upper()]
+                filtered_pt_floors = [floor for floor in intersecting_st_floors if "PT" in floor.Name.upper()]
 
-                        try:
-                            cl_spot_elevation = doc.Create.NewSpotElevation(view, reference, point, point, point, point, False)
-                            cl_spot_elevation.SpotDimensionType = cl_spot_dimension_type
-                            break
-                        except:
-                            # print("Failed for Floor {}" .format(floor.Id))
-                            continue
+                # Collect all AR Rooms
 
-        for floor in pt_floor_finishes:
+                ar_rooms = FilteredElementCollector(ar_doc).OfCategory(BuiltInCategory.OST_Rooms).ToElements()
+                filtered_ar_rooms = intersecting_geometries(ar_rooms, options)
 
-            options = Options()
-            options.View = view
-            options.IncludeNonVisibleObjects = True
-            options.ComputeReferences = True
+        else:
+            linked_instance = None
+            ai_doc = doc
+            ar_doc = doc
+            view_level_id = view.GenLevel.Id
+            ai_floor_finishes = FilteredElementCollector(doc).OfCategory(BuiltInCategory.OST_Floors).WherePasses(ElementLevelFilter(view_level_id)).ToElements()
+            stair_collector = FilteredElementCollector(doc).OfCategory(BuiltInCategory.OST_Stairs).WhereElementIsNotElementType().ToElements()
+            filtered_stairs = [stair for stair in stair_collector if stair.LookupParameter("Base Level").AsElementId() == view_level_id] 
+
+    else:
+        linked_instance = None
+        ai_doc = doc
+        view_level_id = view.GenLevel.Id
+        ai_floor_finishes = FilteredElementCollector(doc).OfCategory(BuiltInCategory.OST_Floors).WherePasses(ElementLevelFilter(view_level_id)).ToElements()
+
+
+    if view_type == ViewType.FloorPlan:
+
+        finish_candidates = []
+
+        consumed_origins = []
+
+        options = Options()
+        options.View = view
+        options.IncludeNonVisibleObjects = True
+        options.ComputeReferences = True
+        
+        # for stair in filtered_stairs:
+        #     # Extract Landing Faces
+        #     stair_geometry = []
+        #     stair_landing_ids = stair.GetStairsLandings()
+        #     landing_faces = []
+        #     for landing_id in stair_landing_ids:
+        #         landing = ar_doc.GetElement(landing_id)
+        #         stair_geometry.append(landing.get_Geometry(options))
+
+        #     landing_faces = get_upper_faces(stair, stair_geometry)
+            
+        #     for face in landing_faces:
+        #         reference = Reference(stair)
+        #         # if linked_instance:
+        #         #     reference = face.Reference.CreateLinkReference(ar_instance)
+        #         # else:
+        #         #     reference = face.Reference
+        #         print(reference.ElementReferenceType)
+                    
+        #         face_bbox = face.GetBoundingBox()
+        #         point = triangulate_point(face)
+        #         point = XYZ(point.X, point.Y + 6, point.Z)
+                
+
+
+        #         # Ensure point aligns with the reference
+        #         if reference is not None and point is not None:
+        #             projected_point = face.Project(point)
+        #             if projected_point and projected_point.XYZPoint:
+        #                 point = projected_point.XYZPoint
+        #                 print(point)
+        #             else:
+        #                 print("Point does not project properly on reference. Skipping...")
+        #                 continue
+
+        #             # print(f"Creating SpotElevation for Floor {floor.Id}")
+        #             # try:
+        #             print("Spotting")
+        #             ffl_spot_elevation = doc.Create.NewSpotElevation(view, reference, point, point, point, point, False)
+        #             ffl_spot_elevation.DimensionType = ffl_spot_dimension_type
+
+        #             # except:
+        #             #     print("Failed for Floor")
+        #             #     continue
+        
+
+        for floor in ai_floor_finishes:
+            floor_grade = round(floor.LookupParameter("Height Offset From Level").AsDouble(), 2)
+            if floor.LookupParameter("Area").AsDouble() < 40:
+                continue
+
 
             geometry_faces = floor.get_Geometry(options)
             if not geometry_faces:
@@ -677,18 +453,258 @@ if view_type == ViewType.FloorPlan:
                         try:
                             if face.FaceNormal.Z == 1 and face.Reference:
                                 finish_candidates.append(face)
+                        except:
+                            continue
+
+
+            floor_bbox = floor.get_BoundingBox(view)
+            if floor_bbox is None:
+                continue
+
+            floor_outline = Outline(floor_bbox.Min, floor_bbox.Max)
+            # Inflate the bounding box manually by scaling the min and max points
+            scale_factor = 1.3  # Adjust scale factor as needed
+            bbox_min = floor_bbox.Min
+            bbox_max = floor_bbox.Max
+            inflated_min = XYZ(
+                bbox_min.X - (bbox_max.X - bbox_min.X) * (scale_factor - 1) / 2,
+                bbox_min.Y - (bbox_max.Y - bbox_min.Y) * (scale_factor - 1) / 2,
+                bbox_min.Z - (bbox_max.Z - bbox_min.Z) * (scale_factor * 10 - 1) / 2,
+            )
+            inflated_max = XYZ(
+                bbox_max.X + (bbox_max.X - bbox_min.X) * (scale_factor - 1) / 2,
+                bbox_max.Y + (bbox_max.Y - bbox_min.Y) * (scale_factor - 1) / 2,
+                bbox_max.Z + (bbox_max.Z - bbox_min.Z) * (scale_factor * 10 - 1) / 2,
+            )
+
+            floor_inflated_outline = Outline(inflated_min, inflated_max)
+
+            for adj_floor in ai_floor_finishes:
+                adj_floor_bbox = adj_floor.get_BoundingBox(view)
+                if adj_floor_bbox is None:
+                    continue
+                adj_floor_outline = Outline(adj_floor_bbox.Min, adj_floor_bbox.Max)
+                if floor_inflated_outline.Intersects(adj_floor_outline, 0.1):
+                    if round(adj_floor.LookupParameter("Height Offset From Level").AsDouble(), 2) == floor_grade:
+                        continue
+                    else:
+                        geometry_faces = floor.get_Geometry(options)
+                        if not geometry_faces:
+                            # print("No geometry for floor:", floor.Id)
+                            continue
+
+                        reference = None
+                        point = None
+
+                        for geom_obj in geometry_faces:
+                            if hasattr(geom_obj, "Faces"):
+                                solid = geom_obj
+                                for face in solid.Faces:
+                                    try:
+                                        if face.FaceNormal.Z == 1 and face.Reference:
+                                            finish_candidates.append(face)
+                                            if linked_instance:
+                                                reference = face.Reference.CreateLinkReference(ai_instance)
+                                            else:
+                                                reference = face.Reference
+                                                
+                                            face_bbox = face.GetBoundingBox()
+                                            # uv_point = (face_bbox.Min + face_bbox.Max)/2
+                                            # point = face.Evaluate(uv_point)
+                                            point = triangulate_point(face)
+                                            break
+                                    except:
+                                        continue
+
+                            if reference:
+                                break
+
+                        # Ensure point aligns with the reference
+                        if reference is not None and point is not None:
+                            projected_point = face.Project(point)
+                            if projected_point and projected_point.XYZPoint:
+                                point = projected_point.XYZPoint
+                            else:
+                                # print("Point does not project properly on reference. Skipping...")
+                                continue
+
+                            # print(f"Creating SpotElevation for Floor {floor.Id}")
+                            try:
+                                consumed_origins.append(point)
+                                ffl_spot_elevation = doc.Create.NewSpotElevation(view, reference, point, point, point, point, False)
+                                ffl_spot_elevation.DimensionType = ffl_spot_dimension_type
+
+                            except:
+                                # print("Failed for Floor {}" .format(floor.Id))
+                                continue
+                    break
+
+        if linked_instance:
+
+            for room in filtered_ar_rooms:
+                # print("------")
+
+                room_finish = False
+                room_point = room.Location.Point
+
+                room_name = (room.LookupParameter("Name").AsValueString()).lower()
+
+                # print("-Processing-")
+
+
+                # z_room_point = XYZ(room_point.X, room_point.Y, room_point.Z + 1)
+                for face in finish_candidates:
+                    try:
+                        projecton = face.Project(room_point)
+                        if projecton and projecton.XYZPoint: # If valid projection is returned, then the room contains a finish. break the loop and go to other room
+                            room_finish = True
+                            break
+                    except:
+                        continue
+                        # print("None - None")
+                
+                else: 
+                    for floor in st_floor_finishes:
+                        options = Options()
+                        options.View = view
+                        options.IncludeNonVisibleObjects = True
+                        options.ComputeReferences = True
+
+                        geometry_faces = floor.get_Geometry(options)
+                        if not geometry_faces:
+                            # print("No geometry for floor:", floor.Id)
+                            continue
+                        
+                        face = None
+                        reference = None
+                        for geom_obj in geometry_faces:
+                            if hasattr(geom_obj, "Faces"):
+                                solid = geom_obj
+                                for face in solid.Faces:
+                                    if face.FaceNormal.Z == 1 and face.Reference:
+                                        if linked_instance:
+                                            reference = face.Reference.CreateLinkReference(st_instance)
+                                        else:
+                                            reference = face.Reference
+                                        break
+                            if reference:
+                                break
+
+                        # Ensure point aligns with the reference
+                        if reference is not None:
+                            projected_point = face.Project(room_point)
+                            if projected_point and projected_point.XYZPoint:
+                                point = projected_point.XYZPoint
+                                # print(point)
+                            else:
+                                # print("Point does not project properly on reference. Skipping...")
+                                continue
+
+                            try:
+                                cl_spot_elevation = doc.Create.NewSpotElevation(view, reference, point, point, point, point, False)
+                                cl_spot_elevation.SpotDimensionType = cl_spot_dimension_type
+                                break
+                            except:
+                                # print("Failed for Floor {}" .format(floor.Id))
+                                continue
+
+            for floor in pt_floor_finishes:
+
+                options = Options()
+                options.View = view
+                options.IncludeNonVisibleObjects = True
+                options.ComputeReferences = True
+
+                geometry_faces = floor.get_Geometry(options)
+                if not geometry_faces:
+                    # print("No geometry for floor:", floor.Id)
+                    continue
+
+                reference = None
+                point = None
+
+                for geom_obj in geometry_faces:
+                    if hasattr(geom_obj, "Faces"):
+                        solid = geom_obj
+                        for face in solid.Faces:
+                            try:
+                                if face.FaceNormal.Z == 1 and face.Reference:
+                                    finish_candidates.append(face)
+                                    if linked_instance:
+                                        reference = face.Reference.CreateLinkReference(st_instance)
+                                    else:
+                                        reference = face.Reference
+                                        
+                                    face_bbox = face.GetBoundingBox()
+                                    # uv_point = (face_bbox.Min + face_bbox.Max)/2
+                                    # point = face.Evaluate(uv_point)
+                                    point = triangulate_point(face)
+                                    break
+                            except:
+                                print("error")
+                                continue
+
+                    if reference:
+                        break
+
+                # Ensure point aligns with the reference
+                if reference is not None and point is not None:
+                    projected_point = face.Project(point)
+                    if projected_point and projected_point.XYZPoint:
+                        point = projected_point.XYZPoint
+                    else:
+                        # print("Point does not project properly on reference. Skipping...")
+                        continue
+
+                    # print(f"Creating SpotElevation for Floor {floor.Id}")
+                    try:
+                        cl_spot_elevation = doc.Create.NewSpotElevation(view, reference, point, point, point, point, False)
+                        cl_spot_elevation.DimensionType = cl_spot_dimension_type
+
+                    except:
+                        print("Failed for Floor {}" .format(floor.Id))
+                        continue
+        
+    if view_type == ViewType.CeilingPlan:
+
+        if not ai_ceiling_finishes:
+            script.exit()
+
+        for ceiling in ai_ceiling_finishes:
+
+            options = Options()
+            options.View = view
+            options.IncludeNonVisibleObjects = True
+            options.ComputeReferences = True
+
+            geometry_faces = ceiling.get_Geometry(options)
+            if not geometry_faces:
+                # print("No geometry for floor:", floor.Id)
+                continue
+
+            reference = None
+            point = None
+
+            for geom_obj in geometry_faces:
+                if hasattr(geom_obj, "Faces"):
+                    solid = geom_obj
+                    for face in solid.Faces:
+                        try:
+                            if face.FaceNormal.Z == 1 and face.Reference:
                                 if linked_instance:
-                                    reference = face.Reference.CreateLinkReference(st_instance)
+                                    reference = face.Reference.CreateLinkReference(ai_instance)
                                 else:
                                     reference = face.Reference
                                     
                                 face_bbox = face.GetBoundingBox()
                                 # uv_point = (face_bbox.Min + face_bbox.Max)/2
                                 # point = face.Evaluate(uv_point)
+
                                 point = triangulate_point(face)
+                                # print(point)
+
                                 break
                         except:
-                            print("error")
                             continue
 
                 if reference:
@@ -705,154 +721,80 @@ if view_type == ViewType.FloorPlan:
 
                 # print(f"Creating SpotElevation for Floor {floor.Id}")
                 try:
-                    cl_spot_elevation = doc.Create.NewSpotElevation(view, reference, point, point, point, point, False)
-                    cl_spot_elevation.DimensionType = cl_spot_dimension_type
+                    ceiling_spot_elevation = doc.Create.NewSpotElevation(view, reference, point, point, point, point, False)
+                    ceiling_spot_elevation.DimensionType = ffl_spot_dimension_type
 
                 except:
                     print("Failed for Floor {}" .format(floor.Id))
                     continue
-       
-if view_type == ViewType.CeilingPlan:
 
-    spot_dimension_collector = FilteredElementCollector(doc).OfClass(SpotDimensionType).WhereElementIsElementType()
-    spot_dimension_type_names = [spot_dimension.LookupParameter("Type Name").AsValueString() for spot_dimension in spot_dimension_collector]
+            else:
+                print("failed ceiling reference")
 
-    ffl_type_names = [name for name in spot_dimension_type_names if "Ceiling" in name in name]
+    if view_type == ViewType.Section:
 
-    ffl_spot_dimension_name = forms.SelectFromList.show(ffl_type_names, title = "Select FFL Tag Type", width=600, height=600, button_name="Select Tag Type", multiselect=False)
+        all_floors = []
+        all_floors += filtered_ai_floor_finishes
+        all_floors += filtered_ai_ceiling_finishes
+        all_floors += filtered_pt_floors
+        all_floors += filtered_st_floors
 
-    ffl_spot_dimension_type = [type for type in spot_dimension_collector if type.LookupParameter("Type Name").AsValueString() == ffl_spot_dimension_name]
+        def spot_elevation(slabs, instance):
+            for slab in slabs:
+                if not slab.LookupParameter("Height Offset From Level").AsDouble() == 0:
+                    options = Options()
+                    options.View = view
+                    options.IncludeNonVisibleObjects = True
+                    options.ComputeReferences = True
 
-    ffl_spot_dimension_type = ffl_spot_dimension_type[0]
-
-    if not ai_ceiling_finishes:
-        script.exit()
-
-    for ceiling in ai_ceiling_finishes:
-
-        options = Options()
-        options.View = view
-        options.IncludeNonVisibleObjects = True
-        options.ComputeReferences = True
-
-        geometry_faces = ceiling.get_Geometry(options)
-        if not geometry_faces:
-            # print("No geometry for floor:", floor.Id)
-            continue
-
-        reference = None
-        point = None
-
-        for geom_obj in geometry_faces:
-            if hasattr(geom_obj, "Faces"):
-                solid = geom_obj
-                for face in solid.Faces:
-                    try:
-                        if face.FaceNormal.Z == 1 and face.Reference:
-                            if linked_instance:
-                                reference = face.Reference.CreateLinkReference(ai_instance)
-                            else:
-                                reference = face.Reference
-                                
-                            face_bbox = face.GetBoundingBox()
-                            # uv_point = (face_bbox.Min + face_bbox.Max)/2
-                            # point = face.Evaluate(uv_point)
-
-                            point = triangulate_point(face)
-                            # print(point)
-
-                            break
-                    except:
+                    geometry_faces = slab.get_Geometry(options)
+                    if not geometry_faces:
+                        # print("No geometry for floor:", floor.Id)
                         continue
 
-            if reference:
-                break
+                    reference = None
+                    point = None
 
-        # Ensure point aligns with the reference
-        if reference is not None and point is not None:
-            projected_point = face.Project(point)
-            if projected_point and projected_point.XYZPoint:
-                point = projected_point.XYZPoint
-            else:
-                # print("Point does not project properly on reference. Skipping...")
-                continue
+                    for geom_obj in geometry_faces:
+                        if hasattr(geom_obj, "Faces"):
+                            solid = geom_obj
+                            for face in solid.Faces:
+                                try:
+                                    if face.FaceNormal.Z == 1 and face.Reference:
+                                        edgeloops = face.EdgeLoops
+                                        for loop in edgeloops:
+                                            for edge in loop:
+                                                # if edge.AsCurve().Direction.IsAlmostEqualTo(view.RightDirection):
+                                                # if edge.AsCurve().Direction.IsAlmostEqualTo(XYZ(0,0,1).CrossProduct(view.RightDirection)):
+                                                if edge.AsCurve().Direction.IsAlmostEqualTo(view.RightDirection.CrossProduct(XYZ(0,0,1))):
+                                                    if linked_instance:
+                                                        reference = edge.Reference.CreateLinkReference(instance)
+                                                        point = edge.AsCurve().GetEndPoint(1) - edge.AsCurve().GetEndPoint(0)
+                                                        # print(edge.AsCurve().Direction)
+                                                        # print(view.RightDirection)
+                                                        break
+                                        break
+                                except:
+                                    continue
 
-            # print(f"Creating SpotElevation for Floor {floor.Id}")
-            try:
-                ceiling_spot_elevation = doc.Create.NewSpotElevation(view, reference, point, point, point, point, False)
-                ceiling_spot_elevation.DimensionType = ffl_spot_dimension_type
+                        if reference:
+                            break
 
-            except:
-                print("Failed for Floor {}" .format(floor.Id))
-                continue
+                    # Ensure point aligns with the reference
+                    # try:
+                    bendpt = point + XYZ(0,0,5)
+                    endpt = bendpt + view.RightDirection * 3
+                    ceiling_spot_elevation = doc.Create.NewSpotElevation(view, reference, point, point, point, point, False)
+                    # print(point, bendpt, endpt)
+                    # ceiling_spot_elevation.DimensionType = ffl_spot_dimension_type
 
-        else:
-            print("failed ceiling reference")
+                    # except:
+                    #     print("Failed for Floor {}" .format(floor.Id))
+                    #     continue
 
-if view_type == ViewType.Section:
-
-    all_floors = []
-    all_floors += filtered_ai_floor_finishes
-    all_floors += filtered_ai_ceiling_finishes
-    all_floors += filtered_pt_floors
-    all_floors += filtered_st_floors
-
-    def spot_elevation(slabs, instance):
-        for slab in slabs:
-            if not slab.LookupParameter("Height Offset From Level").AsDouble() == 0:
-                options = Options()
-                options.View = view
-                options.IncludeNonVisibleObjects = True
-                options.ComputeReferences = True
-
-                geometry_faces = slab.get_Geometry(options)
-                if not geometry_faces:
-                    # print("No geometry for floor:", floor.Id)
-                    continue
-
-                reference = None
-                point = None
-
-                for geom_obj in geometry_faces:
-                    if hasattr(geom_obj, "Faces"):
-                        solid = geom_obj
-                        for face in solid.Faces:
-                            try:
-                                if face.FaceNormal.Z == 1 and face.Reference:
-                                    edgeloops = face.EdgeLoops
-                                    for loop in edgeloops:
-                                        for edge in loop:
-                                            # if edge.AsCurve().Direction.IsAlmostEqualTo(view.RightDirection):
-                                            # if edge.AsCurve().Direction.IsAlmostEqualTo(XYZ(0,0,1).CrossProduct(view.RightDirection)):
-                                            if edge.AsCurve().Direction.IsAlmostEqualTo(view.RightDirection.CrossProduct(XYZ(0,0,1))):
-                                                if linked_instance:
-                                                    reference = edge.Reference.CreateLinkReference(instance)
-                                                    point = edge.AsCurve().GetEndPoint(1) - edge.AsCurve().GetEndPoint(0)
-                                                    # print(edge.AsCurve().Direction)
-                                                    # print(view.RightDirection)
-                                                    break
-                                    break
-                            except:
-                                continue
-
-                    if reference:
-                        break
-
-                # Ensure point aligns with the reference
-                # try:
-                bendpt = point + XYZ(0,0,5)
-                endpt = bendpt + view.RightDirection * 3
-                ceiling_spot_elevation = doc.Create.NewSpotElevation(view, reference, point, point, point, point, False)
-                # print(point, bendpt, endpt)
-                # ceiling_spot_elevation.DimensionType = ffl_spot_dimension_type
-
-                # except:
-                #     print("Failed for Floor {}" .format(floor.Id))
-                #     continue
-
-    spot_elevation(filtered_ai_floor_finishes, ai_instance)
-    spot_elevation(filtered_ai_ceiling_finishes, ai_instance)
-    spot_elevation(filtered_pt_floors, st_instance)
-    spot_elevation(filtered_st_floors, st_instance)
+        spot_elevation(filtered_ai_floor_finishes, ai_instance)
+        spot_elevation(filtered_ai_ceiling_finishes, ai_instance)
+        spot_elevation(filtered_pt_floors, st_instance)
+        spot_elevation(filtered_st_floors, st_instance)
 
 t.Commit()
