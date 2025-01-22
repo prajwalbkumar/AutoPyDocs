@@ -6,9 +6,9 @@ title: "Section"
 
 tooltip:   
  en_us: >-
-    Version   =   0.0.1
+    Version   =   0.1.0
     
-    Date       =   07.11.2024
+    Date       =   22.01.2025
 
     ________________________________________________________________
         
@@ -22,29 +22,27 @@ tooltip:
     How-To Guide:
 
 
-    1. Click the "Rooms" button. You will be prompted to select where your rooms are: in current model or in linked model.
+    1. Click on the tool.
     
-    2. You will need to select the type of width to dimension & then you will be prompted to choose the View Type, which filters corresponding views on the sheet.
+    2. Select the AI, ST and AR File when prompted.
 
-    3. Select all rooms by clicking "Check All" or select the particular rooms that need dimensioning.
-
-    Note: Only views already placed on sheets are included in the selection. Views not on sheets are excluded.
-
-    Delete existing room dimensions for the selected views to avoid duplication.
+    3. Done
 
     ________________________________________________________________
         
     Changelog:
     
 
-    - v0.0.1 [14.11.2024]  Initial testing phase.
+    - [08.01.2025] v0.0.1 Initial testing phase.
+
+    - [22.01.2025] v0.1.0 Stacked Dimensions
     
     ________________________________________________________________
 
 highlight: new
 # highlight: updated
 
-help_url: "https://darcairo.sharepoint.com/sites/DARC/SitePages/Dimension-Rooms.aspx"
+# help_url: "https://darcairo.sharepoint.com/sites/DARC/SitePages/Dimension-Rooms.aspx"
 
 author: 
   - Prajwal B Kumar

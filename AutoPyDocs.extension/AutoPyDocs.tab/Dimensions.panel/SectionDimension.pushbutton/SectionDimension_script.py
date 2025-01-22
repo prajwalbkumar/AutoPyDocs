@@ -47,7 +47,6 @@ def get_level_pairs(sorted_levels, room_z):
         if room_z > value_list[i] and room_z < value_list[i+1]:
             return [sorted_levels[i-1], sorted_levels[i], sorted_levels[i+1]]
 
-
 def intersecting_geometries(element_list, options):
     intersecting_elements = []
     intersection_option = SolidCurveIntersectionOptions()
@@ -71,10 +70,13 @@ def intersecting_geometries(element_list, options):
 
     return intersecting_elements
 
-
 view = doc.ActiveView
 view_scale = str(view.Scale)
 view_type = view.ViewType
+
+if not view_type == ViewType.Section:
+    forms.alert("Active view must be a Section View", title="Script Exiting")
+    script.exit()
 
 view_crop_loop = view.GetCropRegionShapeManager().GetCropShape()
 solids = []
@@ -83,6 +85,9 @@ options = Options()
 options.View = view
 options.IncludeNonVisibleObjects = True
 options.ComputeReferences = True
+
+t = Transaction(doc, "Dimension Section")
+t.Start()
 
 for loop in view_crop_loop:
     solid = GeometryCreationUtilities.CreateExtrusionGeometry([loop], view.ViewDirection, 1)
@@ -108,11 +113,13 @@ for loop in view_crop_loop:
 
 linked_instance = FilteredElementCollector(doc).OfClass(RevitLinkInstance).ToElements()
 if linked_instance:
-    documentation_file = forms.alert("Is this a Documentation File or a Live File", warn_icon=False, options=["Documentation File", "Model File"])
+    # documentation_file = forms.alert("Is this a Documentation File or a Live File", warn_icon=False, options=["Documentation File", "Model File"])
 
-    if not documentation_file:
-        forms.alert("No file option selected. Exiting script.", exitscript=True)
+    # if not documentation_file:
+    #     forms.alert("No file option selected. Exiting script.", exitscript=True)
 
+    documentation_file = "Documentation File"
+    
     if documentation_file == "Documentation File":
         link_name = []
         for link in linked_instance:
@@ -186,7 +193,6 @@ if linked_instance:
         ar_rooms = FilteredElementCollector(ar_doc).OfCategory(BuiltInCategory.OST_Rooms).ToElements()
         filtered_ar_rooms = intersecting_geometries(ar_rooms, options)
 
-
 active_levels = FilteredElementCollector(doc).OfCategory(BuiltInCategory.OST_Levels).WhereElementIsNotElementType().ToElements()
 # Create a dictionary with level name as the key and elevation as the value
 active_levels = {level.Name: level.Elevation for level in active_levels}
@@ -194,23 +200,15 @@ active_levels = {level.Name: level.Elevation for level in active_levels}
 # Sort the dictionary by elevation values
 sorted_levels = sorted(active_levels.items(), key=lambda item: item[1])
 
-t = Transaction(doc, "Dimension Section")
-t.Start()
-# Find the center point of the room. By Level.
-for room in filtered_ar_rooms:
-    
-    location = room.Location
 
+
+# Find the center point of the room. By Level.
+for room in filtered_ar_rooms: 
+    location = room.Location
     location = XYZ(location.Point.X, location.Point.Y, location.Point.Z + 2)
     dim_line = Line.CreateUnbound(location, XYZ(0,0,1))
     room_level_location = location.Z
     current_cl_level, current_ffl_level, next_cl_level = get_level_pairs(sorted_levels, room_level_location)
-
-    # print(current_cl_level)
-    # print(current_ffl_level)
-    # print(next_cl_level)
-
-    # print("-----------")
 
     skip_bottom_floor = False
     ceiling_in_room = False
@@ -353,6 +351,5 @@ for room in filtered_ar_rooms:
         doc.Create.NewDimension(view, dim_line, top_references)
         
     doc.Create.NewDimension(view, dim_line, bottom_references)
-
 
 t.Commit()

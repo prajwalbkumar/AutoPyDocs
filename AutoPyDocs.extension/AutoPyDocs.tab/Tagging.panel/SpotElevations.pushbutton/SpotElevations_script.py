@@ -183,7 +183,7 @@ try:
     all_view_types = {
         'Floor Plans': ViewType.FloorPlan,
         'Reflected Ceiling Plans': ViewType.CeilingPlan,
-        'Section' : ViewType.Section
+        # 'Section' : ViewType.Section
     }
 
     # Show a dialog box for selecting desired view types

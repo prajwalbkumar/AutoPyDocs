@@ -11,9 +11,9 @@ title: "Aluminium\n
 
 tooltip:   
   en_us: >-
-    Version   =   0.x.x
+    Version   =   0.1.0
     
-    Date       =   24.10.2024
+    Date       =   18.12.2024
 
     ________________________________________________________________
     
@@ -39,12 +39,14 @@ tooltip:
     Changelog:
     
     
-    - [24.10.2024] v0.x.x Early Development
+    - [24.10.2024] v0.0.1 Early Development
+
+    - [18.12.2024] v0.1.0 Stacked Dimensions
     
     ________________________________________________________________
 
-highlight: new
-# highlight: updated
+# highlight: new
+highlight: updated
 
 help_url: "https://darcairo.sharepoint.com/sites/DARC/SitePages/Dimension-Aluminium%20Schedules.aspx"
 author: Prajwal B Kumar
