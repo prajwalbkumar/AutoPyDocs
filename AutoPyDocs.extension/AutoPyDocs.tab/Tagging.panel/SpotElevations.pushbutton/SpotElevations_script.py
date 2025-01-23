@@ -234,13 +234,12 @@ try:
 
     linked_instance = FilteredElementCollector(doc).OfClass(RevitLinkInstance).ToElements()
     if linked_instance:
-        # documentation_file = forms.alert("Is this a Documentation File or a Live File", warn_icon=False, options=["Documentation File", "Model File"])
+        documentation_file = forms.alert("Is this a Documentation File or a Live File", warn_icon=False, options=["Documentation File", "Model File"])
 
-        # if not documentation_file:
-        #     forms.alert("No file option selected. Exiting script.", exitscript=True)
+        if not documentation_file:
+            forms.alert("No file option selected. Exiting script.", exitscript=True)
 
-        documentation_file = "Documentation File"
-        
+       
         if documentation_file == "Documentation File":
             link_name = []
             for link in linked_instance:
@@ -304,6 +303,78 @@ try:
 
             ar_link_levels = FilteredElementCollector(ar_doc).OfCategory(BuiltInCategory.OST_Levels).WhereElementIsNotElementType().ToElements()
 
+        elif documentation_file == "Model File":
+            link_name = []
+            for link in linked_instance:
+                link_name.append(link.Name)
+                
+            # AI LINK DETAILS
+            ai_link_name = ["Current File"] + link_name
+            ai_instance_name = forms.SelectFromList.show(ai_link_name, title = "Select Linked AI File Containing Ceiling", width=600, height=600, button_name="Select File", multiselect=False)
+            if not ai_instance_name:
+                script.exit()
+
+            if ai_instance_name == "Current File":
+                print("Current File")
+                ai_doc = doc
+
+            else:
+                for link in linked_instance:
+                    if ai_instance_name == link.Name:
+                        ai_instance = link
+                        break
+                ai_doc = ai_instance.GetLinkDocument()
+
+            if not ai_doc:
+                forms.alert("No instance found of the selected link.\n"
+                            "Use Manage Links to Load the Link in the active document!", title = "Link Missing", warn_icon = True)
+                script.exit()
+
+            ai_link_levels = FilteredElementCollector(ai_doc).OfCategory(BuiltInCategory.OST_Levels).WhereElementIsNotElementType().ToElements()
+
+
+            # ST LINK DETAILS
+            st_instance_name = forms.SelectFromList.show(link_name, title = "Select Linked ST File Containing Floor Slabs", width=600, height=600, button_name="Select File", multiselect=False)
+            if not st_instance_name:
+                script.exit()
+
+            for link in linked_instance:
+                if st_instance_name == link.Name:
+                    st_instance = link
+                    break
+            
+
+            st_doc = st_instance.GetLinkDocument()
+            if not st_doc:
+                forms.alert("No instance found of the selected link.\n"
+                            "Use Manage Links to Load the Link in the active document!", title = "Link Missing", warn_icon = True)
+                script.exit()
+                
+            st_link_levels = FilteredElementCollector(st_doc).OfCategory(BuiltInCategory.OST_Levels).WhereElementIsNotElementType().ToElements()
+
+            # AR LINK DETAILS
+            # ar_instance_name = forms.SelectFromList.show(link_name, title = "Select Linked AR File Containing Rooms and Staircases", width=600, height=600, button_name="Select File", multiselect=False)
+            # if not ar_instance_name:
+            #     script.exit()
+
+            # for link in linked_instance:
+            #     if ar_instance_name == link.Name:
+            #         ar_instance = link
+            #         break
+            
+
+            ar_doc = doc
+            if not ar_doc:
+                forms.alert("No instance found of the selected link.\n"
+                            "Use Manage Links to Load the Link in the active document!", title = "Link Missing", warn_icon = True)
+                script.exit()
+
+            ar_link_levels = FilteredElementCollector(ar_doc).OfCategory(BuiltInCategory.OST_Levels).WhereElementIsNotElementType().ToElements()
+
+    else:
+        forms.alert("No ST / AI Link found in the Document", title="Script Exiting")
+        script.exit()
+
     spot_dimension_collector = FilteredElementCollector(doc).OfClass(SpotDimensionType).WhereElementIsElementType()
     spot_dimension_type_names = [spot_dimension.LookupParameter("Type Name").AsValueString() for spot_dimension in spot_dimension_collector]
 
@@ -333,29 +404,107 @@ try:
         options.IncludeNonVisibleObjects = True
         options.ComputeReferences = True
 
+        if documentation_file == "Documentation File":
+            if view_type == ViewType.CeilingPlan:
 
+                live_view_level_name = doc.GetElement(view.GenLevel.Id).Name
+                live_view_level_elevation = doc.GetElement(view.GenLevel.Id).Elevation
+                
+                # Filtering AI Ceiling Finishes
 
-        if linked_instance:
-            if documentation_file == "Documentation File":
-                if view_type == ViewType.CeilingPlan:
+                for level in ai_link_levels:
+                    if level.Name == live_view_level_name:
+                        ai_view_level_id = level.Id
+                        break
+                
+                ai_ceiling_finishes = FilteredElementCollector(ai_doc).OfCategory(BuiltInCategory.OST_Ceilings).WherePasses(ElementLevelFilter(ai_view_level_id)).ToElements()
 
-                    live_view_level_name = doc.GetElement(view.GenLevel.Id).Name
-                    live_view_level_elevation = doc.GetElement(view.GenLevel.Id).Elevation
+            if view_type == ViewType.FloorPlan:
+
+                live_view_level_name = doc.GetElement(view.GenLevel.Id).Name
+                live_view_level_elevation = doc.GetElement(view.GenLevel.Id).Elevation
+
+                # Collect all AI Floor Finishes 
+                for level in ai_link_levels:
+                    if level.Name == live_view_level_name:
+                        ai_view_level_id = level.Id
+                        break
+                
+                ai_floor_finishes = FilteredElementCollector(ai_doc).OfCategory(BuiltInCategory.OST_Floors).WherePasses(ElementLevelFilter(ai_view_level_id)).ToElements()
+
+                # Collect all ST / SC Floors
+                for level in st_link_levels:
+                    if level.Elevation < live_view_level_elevation and level.Elevation > live_view_level_elevation - 2:
+                        st_view_level_id = level.Id
+                        break
+                
+                st_floors = FilteredElementCollector(st_doc).OfCategory(BuiltInCategory.OST_Floors).WherePasses(ElementLevelFilter(st_view_level_id)).ToElements()
+                
+                st_floor_finishes = [floor for floor in st_floors if not "PT" in floor.Name.upper()]
+                pt_floor_finishes = [floor for floor in st_floors if "PT" in floor.Name.upper()]
+
+        
+                # Collect all AR Rooms
+                for level in ar_link_levels:
+                    if level.Name == live_view_level_name:
+                        ar_view_level_id = level.Id
+                        break
+
+                ar_rooms = FilteredElementCollector(ar_doc).OfCategory(BuiltInCategory.OST_Rooms).WhereElementIsNotElementType().ToElements()
+                filtered_ar_rooms = [room for room in ar_rooms if room.LevelId == ar_view_level_id]
+
+            if view_type == ViewType.Section:
+                view_crop_loop = view.GetCropRegionShapeManager().GetCropShape()
+                solids = []
+
+                for loop in view_crop_loop:
+                    solid = GeometryCreationUtilities.CreateExtrusionGeometry([loop], view.ViewDirection, 1)
+
+                    solids.append(solid)
+
                     
-                    # Filtering AI Ceiling Finishes
+                ai_floor_finishes = FilteredElementCollector(ai_doc).OfCategory(BuiltInCategory.OST_Floors).WhereElementIsNotElementType().ToElements()
+                filtered_ai_floor_finishes = intersecting_geometries(ai_floor_finishes, options)
+            
+                ai_ceiling_finishes = FilteredElementCollector(ai_doc).OfCategory(BuiltInCategory.OST_Ceilings).ToElements()
+                filtered_ai_ceiling_finishes = intersecting_geometries(ai_ceiling_finishes, options)
+                
+                st_floors = FilteredElementCollector(st_doc).OfCategory(BuiltInCategory.OST_Floors).WhereElementIsNotElementType().ToElements()
+                intersecting_st_floors = intersecting_geometries(st_floors, options)
 
+                filtered_st_floors = [floor for floor in intersecting_st_floors if not "PT" in floor.Name.upper()]
+                filtered_pt_floors = [floor for floor in intersecting_st_floors if "PT" in floor.Name.upper()]
+
+                # Collect all AR Rooms
+
+                ar_rooms = FilteredElementCollector(ar_doc).OfCategory(BuiltInCategory.OST_Rooms).ToElements()
+                filtered_ar_rooms = intersecting_geometries(ar_rooms, options)
+
+        elif documentation_file == "Model File":
+            if view_type == ViewType.CeilingPlan:
+
+                live_view_level_name = doc.GetElement(view.GenLevel.Id).Name
+                live_view_level_elevation = doc.GetElement(view.GenLevel.Id).Elevation
+                
+                if not ai_instance_name == "Current File":
+                    # Filtering AI Ceiling Finishes
                     for level in ai_link_levels:
                         if level.Name == live_view_level_name:
                             ai_view_level_id = level.Id
                             break
-                    
+
                     ai_ceiling_finishes = FilteredElementCollector(ai_doc).OfCategory(BuiltInCategory.OST_Ceilings).WherePasses(ElementLevelFilter(ai_view_level_id)).ToElements()
+                
+                else:
+                    ai_ceiling_finishes = FilteredElementCollector(ai_doc).OfCategory(BuiltInCategory.OST_Ceilings).WherePasses(ElementLevelFilter(doc.GetElement(view.GenLevel.Id))).ToElements()
+                
 
-                if view_type == ViewType.FloorPlan:
+            if view_type == ViewType.FloorPlan:
 
-                    live_view_level_name = doc.GetElement(view.GenLevel.Id).Name
-                    live_view_level_elevation = doc.GetElement(view.GenLevel.Id).Elevation
+                live_view_level_name = doc.GetElement(view.GenLevel.Id).Name
+                live_view_level_elevation = doc.GetElement(view.GenLevel.Id).Elevation
 
+                if not ai_instance_name == "Current File":
                     # Collect all AI Floor Finishes 
                     for level in ai_link_levels:
                         if level.Name == live_view_level_name:
@@ -364,68 +513,51 @@ try:
                     
                     ai_floor_finishes = FilteredElementCollector(ai_doc).OfCategory(BuiltInCategory.OST_Floors).WherePasses(ElementLevelFilter(ai_view_level_id)).ToElements()
 
-                    # Collect all ST / SC Floors
-                    for level in st_link_levels:
-                        if level.Elevation < live_view_level_elevation and level.Elevation > live_view_level_elevation - 2:
-                            st_view_level_id = level.Id
-                            break
-                    
-                    st_floors = FilteredElementCollector(st_doc).OfCategory(BuiltInCategory.OST_Floors).WherePasses(ElementLevelFilter(st_view_level_id)).ToElements()
-                    
-                    st_floor_finishes = [floor for floor in st_floors if not "PT" in floor.Name.upper()]
-                    pt_floor_finishes = [floor for floor in st_floors if "PT" in floor.Name.upper()]
-
-            
-                    # Collect all AR Rooms
-                    for level in ar_link_levels:
-                        if level.Name == live_view_level_name:
-                            ar_view_level_id = level.Id
-                            break
-
-                    ar_rooms = FilteredElementCollector(ar_doc).OfCategory(BuiltInCategory.OST_Rooms).WhereElementIsNotElementType().ToElements()
-                    filtered_ar_rooms = [room for room in ar_rooms if room.LevelId == ar_view_level_id]
-
-                if view_type == ViewType.Section:
-                    view_crop_loop = view.GetCropRegionShapeManager().GetCropShape()
-                    solids = []
-
-                    for loop in view_crop_loop:
-                        solid = GeometryCreationUtilities.CreateExtrusionGeometry([loop], view.ViewDirection, 1)
-
-                        solids.append(solid)
-
-                        
-                    ai_floor_finishes = FilteredElementCollector(ai_doc).OfCategory(BuiltInCategory.OST_Floors).WhereElementIsNotElementType().ToElements()
-                    filtered_ai_floor_finishes = intersecting_geometries(ai_floor_finishes, options)
+                else:
+                    ai_floor_finishes = FilteredElementCollector(ai_doc).OfCategory(BuiltInCategory.OST_Floors).WherePasses(ElementLevelFilter(doc.GetElement(view.GenLevel.Id))).ToElements()
                 
-                    ai_ceiling_finishes = FilteredElementCollector(ai_doc).OfCategory(BuiltInCategory.OST_Ceilings).ToElements()
-                    filtered_ai_ceiling_finishes = intersecting_geometries(ai_ceiling_finishes, options)
+                
+                # Collect all ST / SC Floors
+                for level in st_link_levels:
+                    if level.Elevation < live_view_level_elevation and level.Elevation > live_view_level_elevation - 2:
+                        st_view_level_id = level.Id
+                        break
+                
+                st_floors = FilteredElementCollector(st_doc).OfCategory(BuiltInCategory.OST_Floors).WherePasses(ElementLevelFilter(st_view_level_id)).ToElements()
+                
+                st_floor_finishes = [floor for floor in st_floors if not "PT" in floor.Name.upper()]
+                pt_floor_finishes = [floor for floor in st_floors if "PT" in floor.Name.upper()]
+
+                ar_rooms = FilteredElementCollector(ar_doc).OfCategory(BuiltInCategory.OST_Rooms).WhereElementIsNotElementType().ToElements()
+                filtered_ar_rooms = [room for room in ar_rooms if room.LevelId == doc.GetElement(view.GenLevel.Id)]
+
+            if view_type == ViewType.Section:
+                view_crop_loop = view.GetCropRegionShapeManager().GetCropShape()
+                solids = []
+
+                for loop in view_crop_loop:
+                    solid = GeometryCreationUtilities.CreateExtrusionGeometry([loop], view.ViewDirection, 1)
+
+                    solids.append(solid)
+
                     
-                    st_floors = FilteredElementCollector(st_doc).OfCategory(BuiltInCategory.OST_Floors).WhereElementIsNotElementType().ToElements()
-                    intersecting_st_floors = intersecting_geometries(st_floors, options)
+                ai_floor_finishes = FilteredElementCollector(ai_doc).OfCategory(BuiltInCategory.OST_Floors).WhereElementIsNotElementType().ToElements()
+                filtered_ai_floor_finishes = intersecting_geometries(ai_floor_finishes, options)
+            
+                ai_ceiling_finishes = FilteredElementCollector(ai_doc).OfCategory(BuiltInCategory.OST_Ceilings).ToElements()
+                filtered_ai_ceiling_finishes = intersecting_geometries(ai_ceiling_finishes, options)
+                
+                st_floors = FilteredElementCollector(st_doc).OfCategory(BuiltInCategory.OST_Floors).WhereElementIsNotElementType().ToElements()
+                intersecting_st_floors = intersecting_geometries(st_floors, options)
 
-                    filtered_st_floors = [floor for floor in intersecting_st_floors if not "PT" in floor.Name.upper()]
-                    filtered_pt_floors = [floor for floor in intersecting_st_floors if "PT" in floor.Name.upper()]
+                filtered_st_floors = [floor for floor in intersecting_st_floors if not "PT" in floor.Name.upper()]
+                filtered_pt_floors = [floor for floor in intersecting_st_floors if "PT" in floor.Name.upper()]
 
-                    # Collect all AR Rooms
+                # Collect all AR Rooms
 
-                    ar_rooms = FilteredElementCollector(ar_doc).OfCategory(BuiltInCategory.OST_Rooms).ToElements()
-                    filtered_ar_rooms = intersecting_geometries(ar_rooms, options)
+                ar_rooms = FilteredElementCollector(ar_doc).OfCategory(BuiltInCategory.OST_Rooms).ToElements()
+                filtered_ar_rooms = intersecting_geometries(ar_rooms, options)
 
-            else:
-                linked_instance = None
-                ai_doc = doc
-                ar_doc = doc
-                view_level_id = view.GenLevel.Id
-                ai_floor_finishes = FilteredElementCollector(doc).OfCategory(BuiltInCategory.OST_Floors).WherePasses(ElementLevelFilter(view_level_id)).ToElements()
-                stair_collector = FilteredElementCollector(doc).OfCategory(BuiltInCategory.OST_Stairs).WhereElementIsNotElementType().ToElements()
-                filtered_stairs = [stair for stair in stair_collector if stair.LookupParameter("Base Level").AsElementId() == view_level_id] 
-
-        else:
-            linked_instance = None
-            ai_doc = doc
-            view_level_id = view.GenLevel.Id
-            ai_floor_finishes = FilteredElementCollector(doc).OfCategory(BuiltInCategory.OST_Floors).WherePasses(ElementLevelFilter(view_level_id)).ToElements()
 
 
         if view_type == ViewType.FloorPlan:
@@ -821,7 +953,7 @@ try:
     error_occured ="Nil"
 
     get_run_data(__title__, runtime, element_count, manual_time, run_result, error_occured)
-      
+    
 except Exception as e:
     
     t.RollBack()
