@@ -47,7 +47,7 @@ def get_level_pairs(sorted_levels, room_z):
         if room_z > value_list[i] and room_z < value_list[i+1]:
             return [sorted_levels[i-1], sorted_levels[i], sorted_levels[i+1]]
 
-def intersecting_geometries(element_list, options):
+def intersecting_geometries(element_list, options, solids):
     intersecting_elements = []
     intersection_option = SolidCurveIntersectionOptions()
     for el in element_list:
@@ -144,10 +144,10 @@ if linked_instance:
             script.exit()
             
         ai_floor_finishes = FilteredElementCollector(ai_doc).OfCategory(BuiltInCategory.OST_Floors).WhereElementIsNotElementType().ToElements()
-        filtered_ai_floor_finishes = intersecting_geometries(ai_floor_finishes, options)
+        filtered_ai_floor_finishes = intersecting_geometries(ai_floor_finishes, options, solids)
        
         ai_ceiling_finishes = FilteredElementCollector(ai_doc).OfCategory(BuiltInCategory.OST_Ceilings).ToElements()
-        filtered_ai_ceiling_finishes = intersecting_geometries(ai_ceiling_finishes, options)
+        filtered_ai_ceiling_finishes = intersecting_geometries(ai_ceiling_finishes, options, solids)
 
         # Collect all ST / SC Floors
         st_instance_name = forms.SelectFromList.show(link_name, title = "Select Linked ST File Containing Floor Slabs", width=600, height=600, button_name="Select File", multiselect=False)
@@ -191,7 +191,7 @@ if linked_instance:
             script.exit()
 
         ar_rooms = FilteredElementCollector(ar_doc).OfCategory(BuiltInCategory.OST_Rooms).ToElements()
-        filtered_ar_rooms = intersecting_geometries(ar_rooms, options)
+        filtered_ar_rooms = intersecting_geometries(ar_rooms, options, solids)
 
 active_levels = FilteredElementCollector(doc).OfCategory(BuiltInCategory.OST_Levels).WhereElementIsNotElementType().ToElements()
 # Create a dictionary with level name as the key and elevation as the value
@@ -199,8 +199,6 @@ active_levels = {level.Name: level.Elevation for level in active_levels}
 
 # Sort the dictionary by elevation values
 sorted_levels = sorted(active_levels.items(), key=lambda item: item[1])
-
-
 
 # Find the center point of the room. By Level.
 for room in filtered_ar_rooms: 
