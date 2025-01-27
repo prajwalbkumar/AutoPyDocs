@@ -128,14 +128,7 @@ def parallel(gridA, gridB):
 def offset_line_plan(revit_line, offset_distance):
     # Calculate the direction & normal vector of the line
     normal = DB.XYZ.BasisZ
-    '''print("Normal vector: X = {}, Y = {}, Z = {}".format(normal.X, normal.Y, normal.Z))
-    
-    # Create a new line for the detail curve from the start point in the direction of the normal
-    start_point = revit_line.GetEndPoint(0)
-    detail_start_point = start_point
-    detail_end_point = start_point + normal * offset_distance
-    doc.Create.NewDetailCurve(view, DB.Line.CreateBound(detail_start_point, detail_end_point))'''
-    
+        
     # Create an offset line using the normal vector and the offset distance
     offset_line = revit_line.CreateOffset(offset_distance, normal)
     return offset_line
@@ -374,6 +367,6 @@ elif total_grid_count > 0 and failed_data:
     output.print_md("##✅ {} Completed with issues.".format(__title__))
 
 
-print("Script runtime: {:.2f} seconds".format(runtime))
+#print("Script runtime: {:.2f} seconds".format(runtime))
 
 

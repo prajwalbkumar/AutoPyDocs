@@ -131,6 +131,7 @@ if selected_view_names:
 else:
     forms.alert("No views were selected.", exitscript=True)
 
+walls_tagged = []
 
 try:
     t = Transaction(doc, "Tag Walls")
@@ -193,12 +194,25 @@ try:
         if not walls_in_view:
             error_in_view = True
 
-        # Sort walls top to down
+        # Collect all tags in the selected view
+        existing_tags = FilteredElementCollector(doc, view.Id).OfClass(IndependentTag).ToElements()
+
+        # Collect IDs of elements already tagged in the view
+        already_tagged_wall_ids = set()
+        for tag in existing_tags:
+            tagged_references = tag.GetTaggedReferences()
+            for tagged_reference in tagged_references:
+                tagged_element = doc.GetElement(tagged_reference.ElementId)
+                if isinstance(tagged_element, Wall):  # Check if the tagged element is a wall
+                    already_tagged_wall_ids.add(tagged_element.Id)
+
 
         wall_dict = {wall: (wall.Location.Curve.GetEndPoint(1).Z + wall.LookupParameter("Base Offset").AsDouble()) for wall in walls_in_view}
         linked_walls = []
-        walls_tagged = []
+        
         for wall in walls_in_view:
+            if wall.Id in already_tagged_wall_ids:
+                continue
 
             if ar_doc.GetElement(wall.LevelId).Name != view.GenLevel.Name:
                 continue

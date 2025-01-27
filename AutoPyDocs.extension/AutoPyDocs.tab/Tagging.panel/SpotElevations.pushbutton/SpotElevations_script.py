@@ -939,8 +939,6 @@ try:
             spot_elevation(filtered_st_floors, st_instance)
 
     t.Commit()
-
-
     end_time = time.time()
     runtime = end_time - start_time
             

@@ -3,11 +3,19 @@
 __author__ = "romaramnani"
 __doc__ = 'Functions on curves to refer in main scripts.'
 
-from Autodesk.Revit.DB import *
-import Autodesk.Revit.DB as DB
+import os
 import math
 import itertools
-from collections import defaultdict
+
+from Autodesk.Revit.DB      import *
+import Autodesk.Revit.DB    as DB
+
+from collections            import defaultdict
+
+script_dir = os.path.dirname(__file__)
+uidoc = __revit__.ActiveUIDocument
+app = __revit__.Application
+doc = __revit__.ActiveUIDocument.Document  # type: Document
 
 def is_concentric(curves):
     c_curves = []
@@ -109,7 +117,7 @@ def isCollinear(l0, l1):
         return False
 
     # Check if the lines lie on the same infinite line
-    
+   
 # Create a normal line perpendicular to the curve of the segment.
 def normal_line(s):
   
@@ -123,11 +131,32 @@ def normal_line(s):
     nl = Line.CreateBound(m, m + n)
     return nl
 
+def isAlmostEqualTo(vec1, vec2, tolerance=1e-9):
+    return vec1.IsAlmostEqualTo(vec2, tolerance)
+
+def isPerpendicular(v1, v2):
+    if v1.DotProduct(v2)== 0:
+        return True
+    else:
+        return False
+
+def CurveToVector(crv):
+    start_point = crv.GetEndPoint(0)
+    end_point = crv.GetEndPoint(1)
+    vec = end_point - start_point
+    return vec.Normalize()
+
 def normalize_vector(vec):
     length = vec.GetLength()
     if length == 0:
         return vec
     return XYZ(vec.X / length, vec.Y / length, vec.Z / length)
+
+def translate_curve(curve, direction, distance):
+    translation_vector = direction.Multiply(distance)
+    transform = Transform.CreateTranslation(translation_vector)
+    translated_curve = curve.CreateTransformed(transform)
+    return translated_curve
 
 # Function to offset a line in Revit
 def offset_line(revit_line, offset_distance):
@@ -280,3 +309,40 @@ def is_edge_in_opening(edge, doc):
                     return True
                 else:
                     return False
+
+def create_model_line(doc, view, curve):
+    work_plane = view.SketchPlane
+    plane_origin = work_plane.Origin
+    plane_normal = work_plane.Normal
+    def project_point(point, plane_origin, plane_normal):
+        # Vector from the plane origin to the point
+        origin_to_point = point - plane_origin
+        # Project the vector onto the plane's normal to find the offset
+        distance_to_plane = origin_to_point.DotProduct(plane_normal)
+        # Calculate the projected point
+        projected_point = point - plane_normal.Multiply(distance_to_plane)
+        return projected_point
+
+    p1 = curve.GetEndPoint(0)
+    p2 = p1 = curve.GetEndPoint(0)
+
+    # Get projected start and end points
+    projected_start = project_point(p1, plane_origin, plane_normal)
+    projected_end = project_point(p2, plane_origin, plane_normal)
+
+    # Create the new projected curve
+    if isinstance(curve, Line):
+        projected_curve = Line.CreateBound(projected_start, projected_end)
+    elif isinstance(curve, Arc):
+        # Additional handling required for arcs
+        mid_point = curve.Evaluate(0.5, True)
+        projected_mid = project_point(mid_point, plane_origin, plane_normal)
+        projected_curve = Arc.Create(projected_start, projected_end, projected_mid)
+    else:
+        raise NotImplementedError("Curve type not supported for projection.")
+
+    model_line = doc.Create.NewModelCurve(projected_curve, view.SketchPlane)  
+    if model_line:
+        print("Line created")
+
+

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
-# '''Rooms'''
-__title__ = "Dimension Rooms"
+
+__title__ = "Test walls"
 __author__ = "roma ramnani"
 
 import clr
@@ -12,6 +12,7 @@ from pyrevit                import revit, forms, script
 from datetime               import datetime
 
 from doc_functions          import get_view_on_sheets
+from dim_functions          import dim_room_wall, segment_reference, filter_linear_walls
 from Extract.RunData        import get_run_data
 
 doc = revit.doc
@@ -131,7 +132,7 @@ def cs_normal_line(room, seg, offset_distance, cs=None):
             first_pt = s_line_end_pt
         s_length = s_direction.GetLength()
         if s_length == 0:
-            print("Warning: Collinear set has zero length. Check the start and end points.")
+            #print("Warning: Collinear set has zero length. Check the start and end points.")
             return None
 
     else:
@@ -169,94 +170,12 @@ def cs_normal_line(room, seg, offset_distance, cs=None):
         nl = Line.CreateBound(pt1, pt1 - normal_vector)
     return nl
 
-def segment_reference(seg, link_instance = None):
-    if 'Current Model' in doc_opted:
-        se = doc.GetElement(seg.ElementId)
-        
-        # If the element is a model line (room separator)
-        if isinstance(se, ModelLine):
-            return se.GeometryCurve.Reference
-        
-        # If the element is a wall
-        if isinstance(se, Wall):
-            # Get the exterior and interior faces
-            rExt = HostObjectUtils.GetSideFaces(se, ShellLayerType.Exterior)[0]
-            rInt = HostObjectUtils.GetSideFaces(se, ShellLayerType.Interior)[0]
-            
-            elemExt = doc.GetElement(rExt)
-            elemInt = doc.GetElement(rInt)
-
-            fExt = elemExt.GetGeometryObjectFromReference(rExt)
-            fInt = elemInt.GetGeometryObjectFromReference(rInt)
-            
-            # Check if the curve intersects with the faces
-            if isinstance(fExt, Face) and fExt.Intersect(seg.GetCurve()) in [SetComparisonResult.Overlap, SetComparisonResult.Subset]:
-                return rExt
-            if isinstance(fInt, Face) and fInt.Intersect(seg.GetCurve()) in [SetComparisonResult.Overlap, SetComparisonResult.Subset]:
-                return rInt
-            
-            # If the element is a curtain wall
-            if se.WallType.FamilyName == 'Curtain Wall':
-                # Get the interior finish face
-                wall_elements= se.get_Geometry(op)
-                for wall_element in wall_elements:
-                    if isinstance(wall_element,Solid):
-                        for f in wall_element.Faces:
-                            ref = f.Reference
-                return ref
-            
-    if 'Link' in doc_opted:  
-        link_doc = link_instance.GetLinkDocument()
-        se = link_doc.GetElement(seg.ElementId)
-        #print(seg.ElementId)
-        # If the element is a model line (room separator)
-        if isinstance(se, ModelLine):
-            return se.GeometryCurve.Reference.CreateLinkReference(link_instance)
-        
-        # If the element is a wall
-        if isinstance(se, Wall):
-            # Get the exterior and interior faces
-            rExt = HostObjectUtils.GetSideFaces(se, ShellLayerType.Exterior)[0]
-            rInt = HostObjectUtils.GetSideFaces(se, ShellLayerType.Interior)[0]
-            #print(rExt)
-
-            rExt_linked = rExt.CreateLinkReference(link_instance)
-            rInt_linked = rInt.CreateLinkReference(link_instance)
-            #print(rExt_linked)
-            
-            elemExt = link_doc.GetElement(rExt)
-            elemInt = link_doc.GetElement(rInt)
-            #print(elemExt)
-            #print(elemInt)
-
-            fExt = elemExt.GetGeometryObjectFromReference(rExt)
-            fInt = elemInt.GetGeometryObjectFromReference(rInt)
-            #print(fExt)
-
-            # Check if the curve intersects with the faces
-            if isinstance(fExt, Face) and fExt.Intersect(seg.GetCurve()) in [SetComparisonResult.Overlap, SetComparisonResult.Subset]:
-                return rExt_linked
-            if isinstance(fInt, Face) and fInt.Intersect(seg.GetCurve()) in [SetComparisonResult.Overlap, SetComparisonResult.Subset]:
-                return rInt_linked
-
-
-            # If the element is a curtain wall
-            if se.WallType.FamilyName == 'Curtain Wall':
-                # Get the interior finish face
-                wall_elements = se.get_Geometry(op)
-                for wall_element in wall_elements:
-                    if isinstance(wall_element, Solid):
-                        for f in wall_element.Faces:
-                            ref = f.Reference.CreateLinkReference(link_instance)
-                return ref
-    return None
-
 def model_rooms(doc):
     rooms = []
-    if 'Current Model' in doc_opted:
+    if doc_opted == 'Model File':
         model_rooms = FilteredElementCollector(doc).OfCategory(BuiltInCategory.OST_Rooms)
         rooms.extend(model_rooms)
-    if 'Link' in doc_opted:
+    if doc_opted =='Documentation File':
         linked_rooms = FilteredElementCollector(link_doc).OfCategory(BuiltInCategory.OST_Rooms)
         rooms.extend(linked_rooms)
 
@@ -268,27 +187,16 @@ def model_rooms(doc):
 
 def view_rooms(view):
     rooms = []
-    if 'Current Model' in doc_opted:
+    if doc_opted == 'Model File':
         model_rooms = FilteredElementCollector(doc, view.Id).OfCategory(BuiltInCategory.OST_Rooms)
         rooms.extend(model_rooms)
-    if 'Link' in doc_opted:
-        # linked_instances = FilteredElementCollector(doc, view.Id).OfClass(RevitLinkInstance).ToElements()
-        # # if not linked_instances:
-        # #     forms.alert("No linked document", exitscript=True)
-
-        # # link_names = [link.Name for link in linked_instances]
-
-        # #target_instance_names = forms.SelectFromList.show(link_names, title="Select Target File", width=600, height=600, button_name="Select File", multiselect=True, exitscript = True)
-
-        # # if not target_instance_names:
-        # #     script.exit()
-
-        # for link_instance in linked_instances:
-        #     if link_instance.Name in target_instance_names:    
-        #         link_doc = link_instance.GetLinkDocument()  
-        #         transform = link_instance.GetTotalTransform()  
-                linked_rooms = FilteredElementCollector(link_doc, view.Id).OfCategory(BuiltInCategory.OST_Rooms)
-                rooms.extend(linked_rooms)
+    if doc_opted =='Documentation File':
+        filtered = []
+        linked_rooms = FilteredElementCollector(link_doc).OfCategory(BuiltInCategory.OST_Rooms)
+        for room in linked_rooms:
+            if link_doc.GetElement(room.LevelId).Name != view.GenLevel.Name:
+                filtered.append(room)
+        rooms.extend(filtered)
 
     rooms_in_view = list(rooms)
     #print(rooms_in_view)
@@ -322,26 +230,40 @@ def selected_model_rooms(doc):
     #print ([(room.LookupParameter("Number").AsString()) for room in rooms_to_dim])
     return rooms_to_dim
 
-def ensure_view_is_cropped(view):
-    if isinstance(view, View):
-        if not view.CropBoxActive:
-            view.CropBoxActive = True
-
 def swap_collinear_segments(collinear_sets):
     for cs in collinear_sets:
         if len(cs) > 1:
             cs[0], cs[-1] = cs[-1], cs[0]
 
-doc_ops = ['Current Model', 'Link']
-doc_opted = forms.SelectFromList.show(doc_ops,
-                                      title='Rooms are in:',
-                                      multiselect=True,
-                                      button_name='Select',
-                                    )
+def get_hosted_elements(wall):
+    # Find all inserts (doors, windows, etc.) in the wall
+    insert_ids = wall.FindInserts(True, True, True, True)
+    
+    hosted_elements = []
+    for insert_id in insert_ids:
+        element = doc.GetElement(insert_id)
+        hosted_elements.append(element)
+    
+    return hosted_elements
+
+def get_wall_reference(wall):
+    opt = Options()  # Create an options object for retrieving the geometry
+    geom_elem = wall.get_Geometry(opt)  # Get the geometry of the wall
+    
+    for geom_obj in geom_elem:
+        if hasattr(geom_obj, 'Faces'):
+            for face in geom_obj.Faces:
+                # Return the reference to the first face found
+                return face.Reference
+    return None
+
+doc_ops = ['Model File', 'Documentation File']
+doc_opted = forms.alert("This Revit model is:", 
+                        warn_icon=False, 
+                        options = doc_ops)
 
 if not doc_opted:
-    forms.alert ("Model type not selected", exitscript = True)
-
+    forms.alert ("File type not selected", exitscript = True)
 
 def select_link_doc(doc):
     
@@ -364,13 +286,12 @@ def select_link_doc(doc):
 
     return selected_link, link_doc
 
-if 'Link' in doc_opted:
+if doc_opted =='Documentation File':
     selected_link, link_doc = select_link_doc(doc)
 else:
     selected_link = None
 
-
-dim_ops = ['Length & Width only', 'Least width', 'All wall segments' ]
+dim_ops = ['Length & Width only', 'Least width', 'All wall segments']
 dim_opted = forms.SelectFromList.show(dim_ops,
                                       title='Plan to dimension is for:',
                                       multiselect=True,
@@ -396,12 +317,12 @@ room_issue_counts = {}
 failed_data = []
 #room = filtered_rooms[9] 
 selected_rooms = selected_model_rooms(doc)
-
+filtered_rooms = model_rooms(doc)
 sel_room_ids = []
 for room in selected_rooms:
     room_id = room.Id
     sel_room_ids.append(room_id)
- 
+
 try:
     t = Transaction(doc, "Dimension Room")
     t.Start()
@@ -410,12 +331,14 @@ try:
     total_room_count = 0
 
     for view in selected_views:
-        ensure_view_is_cropped(view)
         #print(view.Name)
         rooms_in_view = view_rooms(view)
+        #print(rooms_in_view)
         for room in rooms_in_view:
+            #print("room is in view")
             room_id = room.Id
             if room_id in sel_room_ids:
+                #print("Yes room found")
                 room_id = room.Id
                 room_key = output.linkify(room_id)
                 if room_key not in room_issue_counts:
@@ -432,149 +355,156 @@ try:
                         "InvalidReference": 0, 
                     }
 
-                    segments = []
-                    #print("Processing room: {}-{}".format(room.LookupParameter("Name").AsString(), room.LookupParameter("Number").AsString()))
+                segments = []
+                #print("Processing room: {}-{}".format(room.LookupParameter("Name").AsString(), room.LookupParameter("Number").AsString()))
 
-                    # Get boundary segments for the room
-                    loops = room.GetBoundarySegments(options)
-                    # Collect all segments
-                    for loop in loops:
-                        for segment in loop:
-                            segments.append(segment)
-                    #print(loops)
-                    #print(segments)
+                # Get boundary segments for the room
+                loops = room.GetBoundarySegments(options)
+                # Collect all segments
+                for loop in loops:
+                    for segment in loop:
+                        segments.append(segment)
+                #print(loops)
+                #print("Segments:{}".format(segments))
 
-                    directions = []
-                    segment_groups = []
-                    # Group segments based on direction
+                directions = []
+                segment_groups = []
+                # Group segments based on direction
 
-                    for segment in segments:
-                        curve = segment.GetCurve()
+                for segment in segments:
+                    curve = segment.GetCurve()
 
-                        d = curve.GetEndPoint(1) - curve.GetEndPoint(0)  # Direction vector of the segment
+                    d = curve.GetEndPoint(1) - curve.GetEndPoint(0)  # Direction vector of the segment
 
-                        idx = -1
-                        for i, direction in enumerate(directions):
-                            if isParallel(d, direction):
-                                idx = i
-                                break
+                    idx = -1
+                    for i, direction in enumerate(directions):
+                        if isParallel(d, direction):
+                            idx = i
+                            break
 
-                        if idx != -1:
-                            # Append to existing group
-                            segment_groups[idx].append(segment)
-                        else:
-                            # Create new group
-                            directions.append(d)
-                            new_group = [segment]
-                            segment_groups.append(new_group)
+                    if idx != -1:
+                        # Append to existing group
+                        segment_groups[idx].append(segment)
+                    else:
+                        # Create new group
+                        directions.append(d)
+                        new_group = [segment]
+                        segment_groups.append(new_group)
 
-                    for i, group in enumerate(segment_groups):
-                        csets = [] 
-                        segment_list = []
-                        length_dir = {}
-                        if len(group) >= 2: 
-                            #print("Group{} : {}".format(i, len(group)))
-                            for segment in group:
-                                for cs in csets:
-                                    if len(cs) > 0:
-                                        if cs:
-                                            l0 = segment.GetCurve()
-                                            l1 = cs[0].GetCurve()
-                                            if isCollinear(l0, l1):
-                                                cs.append(segment)
-                                                break
-                                else:
-                                    # No collinear group found, so create a new one
-                                    csets.append([segment])
-
+                diagonal_walls = []
+                for i, group in enumerate(segment_groups):
+                    csets = [] 
+                    segment_list = []
+                    length_dir = {}
+                    if len(group) >= 2: 
+                        #print("Group{} : {}".format(i, len(group)))
+                        for segment in group:
                             for cs in csets:
-                                #print (cs)
-                                #print("Set length: {}".format(len(cs)))
-                                if len(cs) > 1:
-                                    #print("cs")
-                                    total_length = sum(seg.GetCurve().Length for seg in cs)
-                                    length_dir[cs[0]] = total_length
-                                    # for seg in cs:
-                                    #     doc.Create.NewDetailCurve(view, seg.GetCurve())
-                                elif len(cs) == 1:
-                                    #print("seg")
-                                    for segment in cs:
-                                        length_dir[segment] = segment.GetCurve().Length
+                                if len(cs) > 0:
+                                    if cs:
+                                        l0 = segment.GetCurve()
+                                        l1 = cs[0].GetCurve()
+                                        if isCollinear(l0, l1):
+                                            cs.append(segment)
+                                            break
+                            else:
+                                # No collinear group found, so create a new one
+                                csets.append([segment])
 
-                            sorted_length_dir = dict(sorted(length_dir.items(), key=lambda item: item[1]))
-                            #print(i, sorted_length_dir.items())
+                        for cs in csets:
+                            #print (cs)
+                            #print("Set length: {}".format(len(cs)))
+                            if len(cs) > 1:
+                                #print("cs")
+                                total_length = sum(seg.GetCurve().Length for seg in cs)
+                                length_dir[cs[0]] = total_length
+                                # for seg in cs:
+                                #     doc.Create.NewDetailCurve(view, seg.GetCurve())
+                            elif len(cs) == 1:
+                                #print("seg")
+                                for segment in cs:
+                                    length_dir[segment] = segment.GetCurve().Length
 
-                            #Pair segments with the distance between them
-                            set_pairs = []
-                            
-                            for i, [s0, length0] in enumerate(sorted_length_dir.items()):
-                                c0 = s0.GetCurve()
-                                for [s1, length1] in list(sorted_length_dir.items())[i+1:]:
-                                    c1 = s1.GetCurve()
-                                    d = c0.Distance(c1.GetEndPoint(0))
-                                    set_pairs.append([d, s0, s1])
-                            #print(set_pairs)
+                        sorted_length_dir = dict(sorted(length_dir.items(), key=lambda item: item[1]))
+                        #print(i, sorted_length_dir.items())
 
-                            sorted_by_distance = sorted(set_pairs, key=lambda x: x[0], reverse=True)
+                        #Pair segments with the distance between them
+                        set_pairs = []
                         
-                            #print(sorted_by_distance)
-                            if sorted_by_distance:
-                                #print(dim_opted)
-                                #Add dimension to segments farthest apart
-                                if 'Length & Width only' in dim_opted:
+                        for i, [s0, length0] in enumerate(sorted_length_dir.items()):
+                            c0 = s0.GetCurve()
+                            for [s1, length1] in list(sorted_length_dir.items())[i+1:]:
+                                c1 = s1.GetCurve()
+                                d = c0.Distance(c1.GetEndPoint(0))
+                                set_pairs.append([d, s0, s1])
+                        #print(set_pairs)
+                        
+                        sorted_by_distance = sorted(set_pairs, key=lambda x: x[0], reverse=True)
 
-                                    first = sorted_by_distance[0][1]
-                                    second = sorted_by_distance[0][2]
-                                    #print(selected_link)
-                                    #print(type(first))
-                                    refArray = ReferenceArray() 
-                                    refArray.Append(segment_reference(first, selected_link))
-                                    refArray.Append(segment_reference(second, selected_link)) 
-                                    
-                                    length_first = sorted_length_dir[first]
-                                    length_second = sorted_length_dir[second]
-
-                                    first_cs = None
-                                    second_cs = None
-                                    for cs in csets:
-                                        if len(cs) > 1:
-                                            if first in cs:
-                                                first_cs = cs
-                                            if second in cs:
-                                                second_cs = cs
-
-                                    if length_first >= length_second:
-                                        #print("Length: {}".format(length_second))
-                                        
-                                        if second_cs and len(second_cs) > 1:
-                                            
-                                            #print("second_cs")
-                                            nl = cs_normal_line(room, second, offset_distance, second_cs)
-                                        else:
-                                            nl = normal_line(second, offset_distance)
-                                    else:
-                                        #print("Length: {}".format(length_first))
-                                        if first_cs and len(first_cs) > 1:
-                                            
-                                            #print("first_cs")
-                                            nl = cs_normal_line(room, first, offset_distance, first_cs)
-                                        else:
-                                            nl = normal_line(first, offset_distance)
-                                    # if nl is not None:
-                                    #     doc.Create.NewDetailCurve(view, nl)
-                                        
-                                    if segment_reference(first, selected_link) is None or segment_reference(second, selected_link) is None:
-                                        room_issue_counts[room_key]["InvalidReference"] += 1
-                                    #else:
-                                        #print(refArray.Size)
-                                        #print(segment_reference(first))
-                                        #print(segment_reference(second))
-                                    if refArray.Size>=2:
-                                        d1 = doc.Create.NewDimension(view, nl, refArray)
-                                        total_dim_count += 1
-                                    else:
-                                        room_issue_counts[room_key] += 1
+                        #print(sorted_by_distance)
+                        if sorted_by_distance:
+                            #Add dimension to segments farthest apart
+                            if 'Length & Width only' in dim_opted:
+                                first = sorted_by_distance[0][1]
+                                second = sorted_by_distance[0][2]
+                                #print(type(first))
+                                refArray = ReferenceArray() 
+                                refArray.Append(segment_reference(doc_opted, first, selected_link))
+                                refArray.Append(segment_reference(doc_opted, second, selected_link)) 
                                 
+                                length_first = sorted_length_dir[first]
+                                length_second = sorted_length_dir[second]
+
+                                first_cs = None
+                                second_cs = None
+                                for cs in csets:
+                                    if len(cs) > 1:
+                                        if first in cs:
+                                            first_cs = cs
+                                        if second in cs:
+                                            second_cs = cs
+
+                                if length_first >= length_second:
+                                    #print("Length: {}".format(length_second))
+                                    if second_cs and len(second_cs) > 1:
+                                        #print("second_cs")
+                                        nl = cs_normal_line(room, second, offset_distance, second_cs)
+                                    else:
+                                        nl = normal_line(second, offset_distance)
+                                else:
+                                    #print("Length: {}".format(length_first))
+                                    if first_cs and len(first_cs) > 1:
+                                        #print("first_cs")
+                                        nl = cs_normal_line(room, first, offset_distance, first_cs)
+                                    else:
+                                        nl = normal_line(first, offset_distance)
+                                
+                                #print(nl)
+                                # if nl is not None:
+                                #     doc.Create.NewDetailCurve(view, nl)
+                                
+                                ref1 = segment_reference(doc_opted, first, selected_link)
+                                ref2 = segment_reference(doc_opted, second, selected_link)
+
+                                # print("RefSize: {}".format(refArray.Size))
+                                # print("Ref1: {}".format(ref1))
+                                # print("Ref2: {}".format(ref2))
+
+                                if not ref1 or not ref2:
+                                    room_issue_counts[room_key]["InvalidReference"] += 1
+                                
+                                if ref1 and ref2:
+                                    #try:
+                                        if refArray.Size>=2:
+                                            d1 = doc.Create.NewDimension(view, nl, refArray)
+                                            # if d1:
+                                            #     print("Dimensioned")
+                                            total_dim_count += 1
+                                        else:
+                                            room_issue_counts[room_key]["InvalidReference"] += 1
+                                    #except Exception as e:
+                                        #print("Error in LxW dimension: {}".format(str(e)))
+                                #print(d1)
                                 #Add dimension to segments closest to each other
                                 if 'Least width' in dim_opted:
                                     if len(set_pairs) >= 2:
@@ -590,18 +520,19 @@ try:
                                         if nl2 is not None:
                                             #doc.Create.NewDetailCurve(view, nl2)
                                             refArray2 = ReferenceArray()
-                                            refArray2.Append(segment_reference(first_sg, selected_link))  
-                                            refArray2.Append(segment_reference(second_sg, selected_link))
-                                            if segment_reference(first_sg) is None or segment_reference(second_sg, selected_link) is None:
+                                            refArray2.Append(segment_reference(doc_opted, first_sg, selected_link))  
+                                            refArray2.Append(segment_reference(doc_opted, second_sg, selected_link))
+                                            if segment_reference(doc_opted, first_sg) is None or segment_reference(doc_opted, second_sg, selected_link) is None:
                                                 room_issue_counts[room_key]["InvalidReference"]+= 1
                                             else:
-                                                #print(refArray2.Size)
-                                                #print(refArray2)
+                                                # print(refArray2.Size)
+                                                # print(refArray2)
                                                 if refArray2.Size>=2:
                                                     d2 = doc.Create.NewDimension(view, nl2, refArray2)
                                                     total_dim_count += 1
                                                 else:
                                                     room_issue_counts[room_key]["InvalidReference"] += 1
+                                
                                 #Add dimension to all segments
                                 if 'All wall segments' in dim_opted:
                                     if len(set_pairs) >=3:
@@ -612,9 +543,9 @@ try:
                                             #doc.Create.NewDetailCurve(view, nl3)
                                             refArray3 = ReferenceArray()
                                             for sorted_segment in sorted_length_dir:
-                                                refArray3.Append(segment_reference(sorted_segment, selected_link))
+                                                refArray3.Append(segment_reference(doc_opted, sorted_segment, selected_link))
                                             #print(refArray3.Size) 
-                                            if segment_reference(sorted_segment) is None:
+                                            if segment_reference(doc_opted, sorted_segment) is None:
                                                 room_issue_counts[room_key]["InvalidReference"] += 1
                                             else:
                                                 if refArray3.Size>=2: 
@@ -622,17 +553,35 @@ try:
                                                     total_dim_count += (refArray3.Size - 1)
                                                 else:
                                                     room_issue_counts[room_key]["InvalidReference"] += 1
-                            if len(set_pairs) <1:
+                        
+                    elif len(group) == 1:
+                        seg = group[0]
+                        wall = doc.GetElement(seg.ElementId)
+                        if wall:
+                            wall_id = wall.Id
+                            #seg_curve = seg.Curve
+                            wall_curve = wall.Location.Curve
+
+                            if isinstance (wall_curve, Line) :
+                                if wall_id not in [doc.GetElement(d_wall.ElementId).Id for d_wall in diagonal_walls]:
+                                    diagonal_walls.append(seg)
+                                    #print("Segment added: {}".format(wall.Id))
+                             
+                            else:   
                                 room_issue_counts[room_key]["CurvedBoundaryCount"] += 1
-                        else: 
-                            room_issue_counts[room_key]["NonParallelCount"] += 1
-                            #get view name and room link in report for not dimensioned
-                            #forms.alert("Room needs to have atleast 2 parallel sides to make linear dimension")
-                    total_room_count += 1
+                                #forms.alert("Room needs to have atleast 2 parallel sides to make linear dimension")
+                if diagonal_walls:
+                    collected_walls = FilteredElementCollector(doc, view.Id).OfClass(Wall).WhereElementIsNotElementType().ToElements()  
+                    #linear_walls = filter_linear_walls(collected_walls)
+                    for diagonal_seg in diagonal_walls:
+                        #print("line dim")
+                        dim_room_wall(view, room, diagonal_seg, collected_walls, offset_distance)
+
+                total_room_count += 1
             else:
                 room_number = room.LookupParameter("Number").AsString()
-                print("Room {} not in selectd rooms: {}".format(room_number, view.Name))
-                continue
+                #print("Room {} not in selectd rooms: {}".format(room_number, view.Name))
+                continue 
 
     t.Commit()
 
@@ -642,7 +591,7 @@ try:
     run_result = "Tool ran successfully"
     element_count = total_dim_count
     error_occured ="Nil"
-
+    #print("Runtime in seconds: {}".format(runtime))
     get_run_data(__title__, runtime, element_count, manual_time, run_result, error_occured)
 
 except Exception as e:
@@ -651,7 +600,7 @@ except Exception as e:
 
     end_time = time.time()
     runtime = end_time - start_time
-
+    print("Runtime in seconds: {}".format(runtime))
     error_occured = ("Error occurred: %seg", str(e))    
     run_result = "Error"
     element_count = 0

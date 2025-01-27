@@ -200,7 +200,7 @@ for row in range(1, excel_worksheet.nrows):  # Start from 1 to skip the header
 
     col_f = clean_float_value(col_f)
     col_g = clean_float_value(col_g)
-    col_h = clean_float_value(col_h)
+
     col_i = clean_float_value(col_i)
     col_j = clean_float_value(col_j)
     col_k = clean_float_value(col_k)
@@ -213,9 +213,6 @@ for row in range(1, excel_worksheet.nrows):  # Start from 1 to skip the header
     col_r = clean_float_value(col_r)
     col_s = clean_float_value(col_s)
     col_t = clean_float_value(col_t)
-
-
-
 
 
     # Update column I values to "FLOOR PLAN" if they match specific keywords
@@ -713,13 +710,11 @@ for row in combined_data:
     level_collector = FilteredElementCollector(doc).OfCategory(BuiltInCategory.OST_Levels).WhereElementIsNotElementType().ToElements()
 
     for level in level_collector:
+
         if level.Name.lower() == level_name.lower():
             matching_level.append(level)
-            break
-
-    if not matching_level:
-        level_mismatch.append((level_name, "No Matching Level In Document"))
-        continue
+        else:
+            level_mismatch.append((level_name, "No Matching Level In Document"))
 
     # Use a case-insensitive check to ensure matches
     matching_template = next(
@@ -730,17 +725,23 @@ for row in combined_data:
         None
     )
 
-
+    if level_mismatch:
+        matching_view = next((v for v in FilteredElementCollector(doc).OfClass(View).ToElements()if v.Name == col_o), None)
+        if matching_view:
+            # Append row data along with the view and no level
+            matching_rows.append((row, matching_template, None, matching_view))
+            
     # Store row only if both template and level are matched
     if matching_template is not None and matching_level:
-        matching_rows.append((row, matching_template, matching_level))  # Append row data, matching template, and level
+        matching_rows.append((row, matching_template, matching_level[0], None))  # Append row data, matching template, and level
         selected_templates.append(matching_template)  # Store the selected template
     else:
         selected_templates.append(None)  # Append None if no matching template is found
-
         # Add a suggestion for unmatched templates based on column data
         suggestion = "{}_{}_{}".format(split_discipline, col_l, col_m)  # Example naming convention for suggestions
         template_suggestions.append(suggestion)
+
+
 
 # Filter combined data to keep only those rows that had a matching template
 filtered_combined_data = [row for row, template in zip(combined_data, selected_templates) if template is not None]
@@ -749,7 +750,7 @@ templates_to_create = []
 # Print unique suggestions for unmatched templates
 if template_suggestions:
     unique_suggestions = list(set(template_suggestions))
-    templates_to_create.append((unique_suggestions, "Custom template needed—create manually."))
+    templates_to_create.append(unique_suggestions)
 
 # Step 6: Create views on matching levels within a transaction
 
@@ -778,6 +779,7 @@ tg.Start()
 
 counter = 1
 new_names = []
+plan_placed_on_sheet = []
 skipped_views = []
 existing_views = FilteredElementCollector(doc).OfClass(View).WhereElementIsNotElementType()
     # Collect all views
@@ -787,6 +789,7 @@ all_the_views = FilteredElementCollector(doc) \
     .ToElements()
 
 # Filter only elevation views
+plan_views = [view for view in all_the_views if view.ViewType == ViewType.FloorPlan]
 elevation_views = [view for view in all_the_views if view.ViewType == ViewType.Elevation]
 section_views = [view for view in all_the_views if view.ViewType == ViewType.Section]
 scope_box_views = elevation_views
@@ -810,10 +813,11 @@ unplaced_views = [
 all_scopeboxes = FilteredElementCollector(doc).OfCategory(BuiltInCategory.OST_VolumeOfInterest).ToElements()
 
 # Place each created view on its corresponding sheet
-for row_data, matching_template, matching_level in matching_rows:
+for row_data, matching_template, matching_level, matching_view in matching_rows:
 
     matched_views = []
     col_a, col_b, col_c, col_d, col_e, col_f, col_g, col_h,col_i,  col_j, col_k, col_l, col_m, col_n, col_o, col_p, col_q, col_r, col_s, col_t, split_discipline = row_data
+
 
 
     if col_l.lower() in ["elevation"]:
@@ -926,112 +930,34 @@ for row_data, matching_template, matching_level in matching_rows:
                 if new_view:
                     new_names.append((new_view.Name, sheet.Name))
 
+            if sheet:
+                # Initialize parameter values
+                parameter_map = {
+                    0: col_a, 1: col_b, 2: col_c, 3: col_d, 4: col_e,
+                    5: col_f, 6: col_g, 7: col_h, 8: col_i}
 
-            # Set sheet parameters if available
-            folder_parameter = sheet.LookupParameter("Folder")
-            if folder_parameter and folder_parameter.StorageType == StorageType.String:
-                folder_parameter.Set("Elevation")
-            subdiscipline_parameter = sheet.LookupParameter("Sub-Discipline")
-            if subdiscipline_parameter and folder_parameter.StorageType == StorageType.String:
-                subdiscipline_parameter.Set(selected_discipline)
+                # Set sheet parameters if available
+                folder_parameter = sheet.LookupParameter("Folder")
+                if folder_parameter and folder_parameter.StorageType == StorageType.String:
+                    folder_parameter.Set("Elevation")
+                subdiscipline_parameter = sheet.LookupParameter("Sub-Discipline")
+                if subdiscipline_parameter and folder_parameter.StorageType == StorageType.String:
+                    subdiscipline_parameter.Set(selected_discipline)
 
-            a_value = excel_worksheet.cell_value(0, 0)  
-            if a_value:
-                a_parameter = sheet.LookupParameter(a_value)
-                if a_parameter and a_parameter.StorageType == StorageType.String:
-                    a_parameter.Set(col_a)
-                else:
-                    print("No parameter found for {}".format(a_value))
+                for idx, param_value in parameter_map.items():
+                    parameter_name = excel_worksheet.cell_value(0, idx).strip()
+                    if parameter_name:
+                        sheet_param = sheet.LookupParameter(parameter_name)
+                        if sheet_param and sheet_param.StorageType == StorageType.String:
+                            sheet_param.Set(param_value)
 
+                # Set additional sheet parameters
+                for param_name, param_value in [("Drawn By", col_q), ("Designed By", col_r), ("Checked By", col_s), ("Approved By", col_t)]:
+                    param = sheet.LookupParameter(param_name)
+                    if param and param.StorageType == StorageType.String:
+                        param.Set(param_value)  
 
-            b_value = excel_worksheet.cell_value(0, 1).strip()
-            if b_value:
-                b_parameter = sheet.LookupParameter(b_value)
-                if b_parameter and b_parameter.StorageType == StorageType.String:
-                    b_parameter.Set(col_b)
-                else:
-                    print("No parameter found for {}".format(b_value))
-
-            c_value = excel_worksheet.cell_value(0, 2).strip()
-            if c_value:
-                c_parameter = sheet.LookupParameter(c_value)
-                if c_parameter and c_parameter.StorageType == StorageType.String:
-                    c_parameter.Set(col_c)
-                else:
-                    print("No parameter found for {}".format(c_value))
-
-
-
-            d_value = excel_worksheet.cell_value(0, 3).strip()
-            if d_value:
-                d_parameter = sheet.LookupParameter(d_value)
-                if d_parameter and d_parameter.StorageType == StorageType.String:
-                    d_parameter.Set(col_d)
-                else:
-                    print("No parameter found for {}".format(d_value))
-
-
-            e_value = excel_worksheet.cell_value(0, 4).strip()
-            if e_value:
-                e_parameter = sheet.LookupParameter(e_value)
-                if e_parameter and e_parameter.StorageType == StorageType.String:
-                    e_parameter.Set(col_e)
-                else:
-                    print("No parameter found for {}".format(e_value))
-
-
-            f_value = excel_worksheet.cell_value(0, 5).strip()
-            if f_value:
-                f_parameter = sheet.LookupParameter(f_value)
-                if f_parameter and f_parameter.StorageType == StorageType.String:
-                    f_parameter.Set(col_f)
-                else:
-                    print("No parameter found for {}".format(f_value))
-
-
-            g_value = excel_worksheet.cell_value(0, 6).strip()
-            if g_value:
-
-                g_parameter = sheet.LookupParameter(g_value)
-
-                if g_parameter and g_parameter.StorageType == StorageType.String:
-                    g_parameter.Set(col_g)
-                else:
-                    print("No parameter found for {}".format(g_value))
-
-
-            h_value = excel_worksheet.cell_value(0, 7).strip()
-            if h_value:
-                h_parameter = sheet.LookupParameter(h_value)
-                if h_parameter and h_parameter.StorageType == StorageType.String:
-                    h_parameter.Set(col_h)
-                else:
-                    print("No parameter found for {}".format(h_value))
-
-
-
-            i_value = excel_worksheet.cell_value(0, 8).strip()
-            if i_value:
-                i_parameter = sheet.LookupParameter(i_value)
-                if i_parameter and i_parameter.StorageType == StorageType.String:
-                    i_parameter.Set(col_i)
-                else:
-                    print("No parameter found for {}".format(i_value))
-
-            drawn_parameter = sheet.LookupParameter("Drawn By")
-            if drawn_parameter and drawn_parameter.StorageType == StorageType.String:
-                drawn_parameter.Set(col_q)
-            designed_parameter = sheet.LookupParameter("Designed By")
-            if designed_parameter and designed_parameter.StorageType == StorageType.String:
-                designed_parameter.Set(col_r)
-            checked_parameter = sheet.LookupParameter("Checked By")
-            if checked_parameter and checked_parameter.StorageType == StorageType.String:
-                checked_parameter.Set(col_s)
-            approved_parameter = sheet.LookupParameter("Approved By")
-            if approved_parameter and approved_parameter.StorageType == StorageType.String:
-                approved_parameter.Set(col_t)
-
-            existing_sheets.add(sheet.Name)
+                existing_sheets.add(sheet.Name)
 
         t.Commit()
 
@@ -1183,112 +1109,34 @@ for row_data, matching_template, matching_level in matching_rows:
                 if new_view:
                     new_names.append((new_view.Name, sheet.Name))
 
+            if sheet:
+                # Initialize parameter values
+                parameter_map = {
+                    0: col_a, 1: col_b, 2: col_c, 3: col_d, 4: col_e,
+                    5: col_f, 6: col_g, 7: col_h, 8: col_i}
 
-            # Set sheet parameters if available
-            folder_parameter = sheet.LookupParameter("Folder")
-            if folder_parameter and folder_parameter.StorageType == StorageType.String:
-                folder_parameter.Set("Section")
-            subdiscipline_parameter = sheet.LookupParameter("Sub-Discipline")
-            if subdiscipline_parameter and folder_parameter.StorageType == StorageType.String:
-                subdiscipline_parameter.Set(selected_discipline)
+                # Set sheet parameters if available
+                folder_parameter = sheet.LookupParameter("Folder")
+                if folder_parameter and folder_parameter.StorageType == StorageType.String:
+                    folder_parameter.Set("Section")
+                subdiscipline_parameter = sheet.LookupParameter("Sub-Discipline")
+                if subdiscipline_parameter and folder_parameter.StorageType == StorageType.String:
+                    subdiscipline_parameter.Set(selected_discipline)
 
-            a_value = excel_worksheet.cell_value(0, 0)  
-            if a_value:
-                a_parameter = sheet.LookupParameter(a_value)
-                if a_parameter and a_parameter.StorageType == StorageType.String:
-                    a_parameter.Set(col_a)
-                else:
-                    print("No parameter found for {}".format(a_value))
+                for idx, param_value in parameter_map.items():
+                    parameter_name = excel_worksheet.cell_value(0, idx).strip()
+                    if parameter_name:
+                        sheet_param = sheet.LookupParameter(parameter_name)
+                        if sheet_param and sheet_param.StorageType == StorageType.String:
+                            sheet_param.Set(param_value)
 
+                # Set additional sheet parameters
+                for param_name, param_value in [("Drawn By", col_q), ("Designed By", col_r), ("Checked By", col_s), ("Approved By", col_t)]:
+                    param = sheet.LookupParameter(param_name)
+                    if param and param.StorageType == StorageType.String:
+                        param.Set(param_value)  
 
-            b_value = excel_worksheet.cell_value(0, 1).strip()
-            if b_value:
-                b_parameter = sheet.LookupParameter(b_value)
-                if b_parameter and b_parameter.StorageType == StorageType.String:
-                    b_parameter.Set(col_b)
-                else:
-                    print("No parameter found for {}".format(b_value))
-
-            c_value = excel_worksheet.cell_value(0, 2).strip()
-            if c_value:
-                c_parameter = sheet.LookupParameter(c_value)
-                if c_parameter and c_parameter.StorageType == StorageType.String:
-                    c_parameter.Set(col_c)
-                else:
-                    print("No parameter found for {}".format(c_value))
-
-
-
-            d_value = excel_worksheet.cell_value(0, 3).strip()
-            if d_value:
-                d_parameter = sheet.LookupParameter(d_value)
-                if d_parameter and d_parameter.StorageType == StorageType.String:
-                    d_parameter.Set(col_d)
-                else:
-                    print("No parameter found for {}".format(d_value))
-
-
-            e_value = excel_worksheet.cell_value(0, 4).strip()
-            if e_value:
-                e_parameter = sheet.LookupParameter(e_value)
-                if e_parameter and e_parameter.StorageType == StorageType.String:
-                    e_parameter.Set(col_e)
-                else:
-                    print("No parameter found for {}".format(e_value))
-
-
-            f_value = excel_worksheet.cell_value(0, 5).strip()
-            if f_value:
-                f_parameter = sheet.LookupParameter(f_value)
-                if f_parameter and f_parameter.StorageType == StorageType.String:
-                    f_parameter.Set(col_f)
-                else:
-                    print("No parameter found for {}".format(f_value))
-
-
-            g_value = excel_worksheet.cell_value(0, 6).strip()
-            if g_value:
-
-                g_parameter = sheet.LookupParameter(g_value)
-
-                if g_parameter and g_parameter.StorageType == StorageType.String:
-                    g_parameter.Set(col_g)
-                else:
-                    print("No parameter found for {}".format(g_value))
-
-
-            h_value = excel_worksheet.cell_value(0, 7).strip()
-            if h_value:
-                h_parameter = sheet.LookupParameter(h_value)
-                if h_parameter and h_parameter.StorageType == StorageType.String:
-                    h_parameter.Set(col_h)
-                else:
-                    print("No parameter found for {}".format(h_value))
-
-
-
-            i_value = excel_worksheet.cell_value(0, 8).strip()
-            if i_value:
-                i_parameter = sheet.LookupParameter(i_value)
-                if i_parameter and i_parameter.StorageType == StorageType.String:
-                    i_parameter.Set(col_i)
-                else:
-                    print("No parameter found for {}".format(i_value))
-
-            drawn_parameter = sheet.LookupParameter("Drawn By")
-            if drawn_parameter and drawn_parameter.StorageType == StorageType.String:
-                drawn_parameter.Set(col_q)
-            designed_parameter = sheet.LookupParameter("Designed By")
-            if designed_parameter and designed_parameter.StorageType == StorageType.String:
-                designed_parameter.Set(col_r)
-            checked_parameter = sheet.LookupParameter("Checked By")
-            if checked_parameter and checked_parameter.StorageType == StorageType.String:
-                checked_parameter.Set(col_s)
-            approved_parameter = sheet.LookupParameter("Approved By")
-            if approved_parameter and approved_parameter.StorageType == StorageType.String:
-                approved_parameter.Set(col_t)
-
-            existing_sheets.add(sheet.Name)
+                existing_sheets.add(sheet.Name)
 
         t.Commit()
 
@@ -1566,13 +1414,14 @@ for row_data, matching_template, matching_level in matching_rows:
                         skipped_views.append((sheet.SheetNumber, sheet.Name) )
 
     # Create a view name using the level information
-    else:
-        if matching_level:
+    elif matching_level:
             t = Transaction(doc, "create plans")
             t.Start()
 
-            level = matching_level[0]
+            level = matching_level
+
             view_name = "{}_{}".format(col_l,level.Name)
+
             # Check if a view with the same name exists and meets the criteria
 
             new_view = None
@@ -1642,112 +1491,34 @@ for row_data, matching_template, matching_level in matching_rows:
                     if new_view:
                         new_names.append((new_view.Name, sheet.Name))
 
+                if sheet:
+                    # Initialize parameter values
+                    parameter_map = {
+                        0: col_a, 1: col_b, 2: col_c, 3: col_d, 4: col_e,
+                        5: col_f, 6: col_g, 7: col_h, 8: col_i}
 
-                # Set sheet parameters if available
-                folder_parameter = sheet.LookupParameter("Folder")
-                if folder_parameter and folder_parameter.StorageType == StorageType.String:
-                    folder_parameter.Set("Floor Plan")
-                subdiscipline_parameter = sheet.LookupParameter("Sub-Discipline")
-                if subdiscipline_parameter and folder_parameter.StorageType == StorageType.String:
-                    subdiscipline_parameter.Set(selected_discipline)
+                    # Set sheet parameters if available
+                    folder_parameter = sheet.LookupParameter("Folder")
+                    if folder_parameter and folder_parameter.StorageType == StorageType.String:
+                        folder_parameter.Set("Floor Plan")
+                    subdiscipline_parameter = sheet.LookupParameter("Sub-Discipline")
+                    if subdiscipline_parameter and folder_parameter.StorageType == StorageType.String:
+                        subdiscipline_parameter.Set(selected_discipline)
 
-                a_value = excel_worksheet.cell_value(0, 0)  
-                if a_value:
-                    a_parameter = sheet.LookupParameter(a_value)
-                    if a_parameter and a_parameter.StorageType == StorageType.String:
-                        a_parameter.Set(col_a)
-                    else:
-                        print("No parameter found for {}".format(a_value))
+                    for idx, param_value in parameter_map.items():
+                        parameter_name = excel_worksheet.cell_value(0, idx).strip()
+                        if parameter_name:
+                            sheet_param = sheet.LookupParameter(parameter_name)
+                            if sheet_param and sheet_param.StorageType == StorageType.String:
+                                sheet_param.Set(param_value)
 
+                    # Set additional sheet parameters
+                    for param_name, param_value in [("Drawn By", col_q), ("Designed By", col_r), ("Checked By", col_s), ("Approved By", col_t)]:
+                        param = sheet.LookupParameter(param_name)
+                        if param and param.StorageType == StorageType.String:
+                            param.Set(param_value)  
 
-                b_value = excel_worksheet.cell_value(0, 1).strip()
-                if b_value:
-                    b_parameter = sheet.LookupParameter(b_value)
-                    if b_parameter and b_parameter.StorageType == StorageType.String:
-                        b_parameter.Set(col_b)
-                    else:
-                        print("No parameter found for {}".format(b_value))
-
-                c_value = excel_worksheet.cell_value(0, 2).strip()
-                if c_value:
-                    c_parameter = sheet.LookupParameter(c_value)
-                    if c_parameter and c_parameter.StorageType == StorageType.String:
-                        c_parameter.Set(col_c)
-                    else:
-                        print("No parameter found for {}".format(c_value))
-
-
-
-                d_value = excel_worksheet.cell_value(0, 3).strip()
-                if d_value:
-                    d_parameter = sheet.LookupParameter(d_value)
-                    if d_parameter and d_parameter.StorageType == StorageType.String:
-                        d_parameter.Set(col_d)
-                    else:
-                        print("No parameter found for {}".format(d_value))
-
-
-                e_value = excel_worksheet.cell_value(0, 4).strip()
-                if e_value:
-                    e_parameter = sheet.LookupParameter(e_value)
-                    if e_parameter and e_parameter.StorageType == StorageType.String:
-                        e_parameter.Set(col_e)
-                    else:
-                        print("No parameter found for {}".format(e_value))
-
-
-                f_value = excel_worksheet.cell_value(0, 5).strip()
-                if f_value:
-                    f_parameter = sheet.LookupParameter(f_value)
-                    if f_parameter and f_parameter.StorageType == StorageType.String:
-                        f_parameter.Set(col_f)
-                    else:
-                        print("No parameter found for {}".format(f_value))
-
-
-                g_value = excel_worksheet.cell_value(0, 6).strip()
-                if g_value:
-    
-                    g_parameter = sheet.LookupParameter(g_value)
-
-                    if g_parameter and g_parameter.StorageType == StorageType.String:
-                        g_parameter.Set(col_g)
-                    else:
-                        print("No parameter found for {}".format(g_value))
-
-
-                h_value = excel_worksheet.cell_value(0, 7).strip()
-                if h_value:
-                    h_parameter = sheet.LookupParameter(h_value)
-                    if h_parameter and h_parameter.StorageType == StorageType.String:
-                        h_parameter.Set(col_h)
-                    else:
-                        print("No parameter found for {}".format(h_value))
-
-
-
-                i_value = excel_worksheet.cell_value(0, 8).strip()
-                if i_value:
-                    i_parameter = sheet.LookupParameter(i_value)
-                    if i_parameter and i_parameter.StorageType == StorageType.String:
-                        i_parameter.Set(col_i)
-                    else:
-                        print("No parameter found for {}".format(i_value))
-
-                drawn_parameter = sheet.LookupParameter("Drawn By")
-                if drawn_parameter and drawn_parameter.StorageType == StorageType.String:
-                    drawn_parameter.Set(col_q)
-                designed_parameter = sheet.LookupParameter("Designed By")
-                if designed_parameter and designed_parameter.StorageType == StorageType.String:
-                    designed_parameter.Set(col_r)
-                checked_parameter = sheet.LookupParameter("Checked By")
-                if checked_parameter and checked_parameter.StorageType == StorageType.String:
-                    checked_parameter.Set(col_s)
-                approved_parameter = sheet.LookupParameter("Approved By")
-                if approved_parameter and approved_parameter.StorageType == StorageType.String:
-                    approved_parameter.Set(col_t)
-
-                existing_sheets.add(sheet.Name)
+                    existing_sheets.add(sheet.Name)
 
             t.Commit()
 
@@ -1791,156 +1562,193 @@ for row_data, matching_template, matching_level in matching_rows:
                         
                         
                 else:
-                        skipped_views.append((sheet.SheetNumber, sheet.Name) )
+
+                    t=Transaction(doc, "place views")
+                    t.Start()
+                    doc.Delete(new_view.Id)
+                    t.Commit()
+
+                    skipped_views.append((sheet.SheetNumber, sheet.Name) )
+    
+    else:
+        if matching_view:
+            t = Transaction(doc, "place plans")
+            t.Start()
+
+            # Filter out views that are already placed on sheets
+            placed_view_ids = {
+                vp.ViewId for vp in FilteredElementCollector(doc).OfClass(Viewport)
+            }
+            placed_views = [
+                view for view in plan_views if view.Id in placed_view_ids
+            ]
+            unplaced_views = [
+                view for view in plan_views if view.Id not in placed_view_ids
+            ]
+
+            plan_scope_box_views = []
+            matched_plan_scope_box = []
+            view_names = [name.strip() for name in col_o.split(",")]
+            scopeboxname_excel = [name.strip() for name in col_p.split(",")]
+
+            for scopebox in all_scopeboxes:
+                    for sb_name in scopeboxname_excel:
+                        if sb_name == scopebox.Name:
+                            matched_plan_scope_box.append(scopebox)
+  
+            for view_name in view_names:
+                for view in unplaced_views:
+                    if view.Name.lower()== view_name.lower():
+                        matched_views.append(view)
+
+            for view_name in view_names:
+                for view in plan_views:
+                    if view.Name.lower()== view_name.lower():
+                        plan_scope_box_views.append(view)
+
+            for new_view in matched_views:
+                if new_view:
+                    if matching_template:
+                        primary_view_id = new_view.GetPrimaryViewId()
+                        if primary_view_id != ElementId.InvalidElementId:
+                            primary_view = doc.GetElement(primary_view_id)
+                            primary_view.ViewTemplateId = matching_template.Id
+                        else:
+                            new_view.ViewTemplateId = matching_template.Id
+                else:
+                    new_view = None
 
 
-new_sheet_created = []
-for row in range(1, excel_worksheet.nrows):
-    col_j = str(excel_worksheet.cell_value(row,  9)).strip()  #SHEET NUMBE
-    col_k = str(excel_worksheet.cell_value(row, 10)).strip()  #SHEET NAME
+            if col_p: 
+                if len(plan_scope_box_views) == len(matched_plan_scope_box):  # Ensure all lists have matching lengths
+                    for i, view in enumerate(plan_scope_box_views):
+                        try:
+                            sb = matched_plan_scope_box[i]  # Access `scopy` safely
+                            view.get_Parameter(BuiltInParameter.VIEWER_VOLUME_OF_INTEREST_CROP).Set(sb.Id)
+                        except IndexError:
+                            print("Index out of range for list of scope box:", i)
+                elif len(matched_plan_scope_box) == 1:
 
-
-
-    if col_j:
-        t = Transaction(doc, "Create sheets")
-        t.Start()
-
-
-        # Place the view on the corresponding sheet
-        sheet_name = col_k
-        sheet_number = col_j
-
-
-        # Check if there’s an existing sheet with the same number but a different discipline
-        conflicting_sheet = next((s for s in FilteredElementCollector(doc).OfClass(ViewSheet)
-                                if s.SheetNumber == sheet_number and 
-                                s.LookupParameter("Sub-Discipline").AsString() != selected_discipline), None)
-
-        if conflicting_sheet:
-            t.RollBack()
-            TaskDialog.Show("Error", "A sheet with the same sheet number exists under a different discipline. Please use a unique sheet number or discipline.")
-            script.exit()
-
-        else:
-
-            existing_sheet = next((s for s in FilteredElementCollector(doc).OfClass(ViewSheet)
-                        if s.Name == sheet_name and s.SheetNumber == sheet_number and s.LookupParameter("Sub-Discipline").AsString() == selected_discipline), None)
-
-            if existing_sheet:
-                sheet = existing_sheet
+                    try:
+                        for view in plan_scope_box_views:
+                            for sb in matched_plan_scope_box:
+                                view.get_Parameter(BuiltInParameter.VIEWER_VOLUME_OF_INTEREST_CROP).Set(sb.Id)
+                    except IndexError:
+                            print("Index out of range for list of scope box:", i)
+                else:
+                    print("List Length Mismatch for Scope Box and Views")
 
             else:
-                # Create a new sheet if it doesn't exist
-                sheet = ViewSheet.Create(doc, selected_title_block_type.Id)
-                sheet.Name = sheet_name
-                sheet.SheetNumber = sheet_number
-                existing_sheets.add(sheet_name)
+                # If col_p is empty, remove the assigned scope box
+                for view in plan_scope_box_views:
+                    try:
+                        scope_box_param = view.get_Parameter(BuiltInParameter.VIEWER_VOLUME_OF_INTEREST_CROP)
+                        if scope_box_param:
+                            scope_box_param.Set(ElementId.InvalidElementId)  # Use this to clear the scope box
+                    except Exception as e:
+                        print("Error removing scope box from view {}: {}".format(view.Name, e))
 
-            # Set sheet parameters if available
-            subdiscipline_parameter = sheet.LookupParameter("Sub-Discipline")
-            if subdiscipline_parameter and subdiscipline_parameter.StorageType == StorageType.String:
-                subdiscipline_parameter.Set(selected_discipline)
 
-            a_value = excel_worksheet.cell_value(0, 0)  
-            if a_value:
-                a_parameter = sheet.LookupParameter(a_value)
-                if a_parameter and a_parameter.StorageType == StorageType.String:
-                    a_parameter.Set(col_a)
+            # Place the view on the corresponding sheet
+            sheet_name = col_k
+            sheet_number = col_j
+
+
+            # Check if there’s an existing sheet with the same number but a different discipline
+            conflicting_sheet = next((s for s in FilteredElementCollector(doc).OfClass(ViewSheet)
+                                    if s.SheetNumber == sheet_number and 
+                                    s.LookupParameter("Sub-Discipline").AsString() != selected_discipline), None)
+
+            if conflicting_sheet:
+                t.RollBack()
+                TaskDialog.Show("Error", "A sheet with the same sheet number exists under a different discipline. Please use a unique sheet number or discipline.")
+                script.exit()
+
+            else:
+
+                existing_sheet = next((s for s in FilteredElementCollector(doc).OfClass(ViewSheet)
+                            if s.Name == sheet_name and s.SheetNumber == sheet_number and s.LookupParameter("Sub-Discipline").AsString() == selected_discipline), None)
+
+                if existing_sheet:
+                    sheet = existing_sheet
+
+
                 else:
-                    print("No parameter found for {}".format(a_value))
+                    # Create a new sheet if it doesn't exist
+                    sheet = ViewSheet.Create(doc, selected_title_block_type.Id)
+                    sheet.Name = sheet_name
+                    sheet.SheetNumber = sheet_number
+                    existing_sheets.add(sheet_name)
+                    if new_view:
+                        new_names.append((new_view.Name, sheet.Name))
+                        plan_placed_on_sheet.append((new_view.Name, sheet.Name))
 
+                if sheet:
+                    # Initialize parameter values
+                    parameter_map = {
+                        0: col_a, 1: col_b, 2: col_c, 3: col_d, 4: col_e,
+                        5: col_f, 6: col_g, 7: col_h, 8: col_i}
 
-            b_value = excel_worksheet.cell_value(0, 1).strip()
-            if b_value:
-                b_parameter = sheet.LookupParameter(b_value)
-                if b_parameter and b_parameter.StorageType == StorageType.String:
-                    b_parameter.Set(col_b)
-                else:
-                    print("No parameter found for {}".format(b_value))
+                    # Set sheet parameters if available
+                    folder_parameter = sheet.LookupParameter("Folder")
+                    if folder_parameter and folder_parameter.StorageType == StorageType.String:
+                        folder_parameter.Set("Floor Plan")
+                    subdiscipline_parameter = sheet.LookupParameter("Sub-Discipline")
+                    if subdiscipline_parameter and folder_parameter.StorageType == StorageType.String:
+                        subdiscipline_parameter.Set(selected_discipline)
 
-            c_value = excel_worksheet.cell_value(0, 2).strip()
-            if c_value:
-                c_parameter = sheet.LookupParameter(c_value)
-                if c_parameter and c_parameter.StorageType == StorageType.String:
-                    c_parameter.Set(col_c)
-                else:
-                    print("No parameter found for {}".format(c_value))
+                    for idx, param_value in parameter_map.items():
+                        parameter_name = excel_worksheet.cell_value(0, idx).strip()
+                        if parameter_name:
+                            sheet_param = sheet.LookupParameter(parameter_name)
+                            if sheet_param and sheet_param.StorageType == StorageType.String:
+                                sheet_param.Set(param_value)
 
+                    # Set additional sheet parameters
+                    for param_name, param_value in [("Drawn By", col_q), ("Designed By", col_r), ("Checked By", col_s), ("Approved By", col_t)]:
+                        param = sheet.LookupParameter(param_name)
+                        if param and param.StorageType == StorageType.String:
+                            param.Set(param_value)  
 
+                    existing_sheets.add(sheet.Name)
 
-            d_value = excel_worksheet.cell_value(0, 3).strip()
-            if d_value:
-                d_parameter = sheet.LookupParameter(d_value)
-                if d_parameter and d_parameter.StorageType == StorageType.String:
-                    d_parameter.Set(col_d)
-                else:
-                    print("No parameter found for {}".format(d_value))
+            t.Commit()
 
+            # Position the view on the sheet
+            title_block_bb = selected_title_block_type.get_BoundingBox(None)
+            sheet_center = XYZ((title_block_bb.Max.X + title_block_bb.Min.X) / 2- 0.18209,(title_block_bb.Max.Y + title_block_bb.Min.Y) / 2, 0)
+            offset = 0.2
+            
+            if sheet:
+                for index, new_view in enumerate(matched_views):
+                    view_position = XYZ(sheet_center.X, sheet_center.Y - (index*offset), 0)
+                    try:
 
-            e_value = excel_worksheet.cell_value(0, 4).strip()
-            if e_value:
-                e_parameter = sheet.LookupParameter(e_value)
-                if e_parameter and e_parameter.StorageType == StorageType.String:
-                    e_parameter.Set(col_e)
-                else:
-                    print("No parameter found for {}".format(e_value))
+                        t=Transaction(doc, "place views")
+                        t.Start()
+                        Viewport.Create(doc, sheet.Id, new_view.Id, view_position)
 
+                        t.Commit()
 
-            f_value = excel_worksheet.cell_value(0, 5).strip()
-            if f_value:
-                f_parameter = sheet.LookupParameter(f_value)
-                if f_parameter and f_parameter.StorageType == StorageType.String:
-                    f_parameter.Set(col_f)
-                else:
-                    print("No parameter found for {}".format(f_value))
+                    except Exception as e:
+                        print("Failed to place view {} on sheet {}: {}".format(new_view.Name, sheet_name, str(e)))
 
+                        # Record the end time and runtime
+                        end_time = time.time()
+                        runtime = end_time - start_time
 
-            g_value = excel_worksheet.cell_value(0, 6).strip()
-            if g_value:
+                        # Log the error details
+                        error_occured = ("Failed to place view {} on sheet {}: {}".format(new_view.Name, sheet_name, str(e)))
+                        run_result = "Error"
+                        element_count = 10
 
-                g_parameter = sheet.LookupParameter(g_value)
+                        # Function to log run data in case of error
+                        get_run_data(__title__, runtime, element_count, manual_time, run_result, error_occured)
+                        
+        
+            else:
+                skipped_views.append((sheet.SheetNumber, sheet.Name) )
 
-                if g_parameter and g_parameter.StorageType == StorageType.String:
-                    g_parameter.Set(col_g)
-                else:
-                    print("No parameter found for {}".format(g_value))
-
-
-            h_value = excel_worksheet.cell_value(0, 7).strip()
-            if h_value:
-                h_parameter = sheet.LookupParameter(h_value)
-                if h_parameter and h_parameter.StorageType == StorageType.String:
-                    h_parameter.Set(col_h)
-                else:
-                    print("No parameter found for {}".format(h_value))
-
-
-
-            i_value = excel_worksheet.cell_value(0, 8).strip()
-            if i_value:
-                i_parameter = sheet.LookupParameter(i_value)
-                if i_parameter and i_parameter.StorageType == StorageType.String:
-                    i_parameter.Set(col_i)
-                else:
-                    print("No parameter found for {}".format(i_value))
-
-            drawn_parameter = sheet.LookupParameter("Drawn By")
-            if drawn_parameter and drawn_parameter.StorageType == StorageType.String:
-                drawn_parameter.Set(col_q)
-            designed_parameter = sheet.LookupParameter("Designed By")
-            if designed_parameter and designed_parameter.StorageType == StorageType.String:
-                designed_parameter.Set(col_r)
-            checked_parameter = sheet.LookupParameter("Checked By")
-            if checked_parameter and checked_parameter.StorageType == StorageType.String:
-                checked_parameter.Set(col_s)
-            approved_parameter = sheet.LookupParameter("Approved By")
-            if approved_parameter and approved_parameter.StorageType == StorageType.String:
-                approved_parameter.Set(col_t)
-
-
-            existing_sheets.add(sheet.Name)
-
-        t.Commit()
 
 tg.Assimilate()
 
@@ -1972,15 +1780,30 @@ if new_names:
     # Create a table to display the skipped views
     output.print_table(table_data=new_names, columns=["VIEW NAME", "SHEET NAME"])  # Print a Table
 
-
-# Print skipped views message at the end
 if templates_to_create:
-    # Print the header for skipped views
-    output.print_md("## ⚠️ Missing Templates ☹️")  # Markdown Heading 2 
-    output.print_md("---")  # Markdown Line Break
-    output.print_md("❌ Views skipped due to missing templates.")  # Print a Line
-    # Create a table to display the skipped views
-    output.print_table(table_data=templates_to_create, columns=["MISSING TEMPLATE", "COMMENT"])  # Print a Table
+    # Flatten templates_to_create if it contains nested lists
+    if any(isinstance(item, list) for item in templates_to_create):
+        templates_to_create = [subitem for item in templates_to_create for subitem in (item if isinstance(item, list) else [item])]
+
+    # Collect all views in the model
+    views = FilteredElementCollector(doc).OfCategory(BuiltInCategory.OST_Views).WhereElementIsNotElementType()
+
+    # Get the names of all existing template views
+    existing_template_names = [view.Name.strip().lower() for view in views if view.IsTemplate]
+
+    # Remove templates already present in the model from templates_to_create
+    templates_to_actually_create = [
+        template for template in templates_to_create
+        if template.strip().lower() not in existing_template_names
+    ]
+
+    if templates_to_actually_create:
+        # Print the header for skipped views
+        output.print_md("## ⚠️ Missing Templates ☹️")  # Markdown Heading 2 
+        output.print_md("---")  # Markdown Line Break
+        output.print_md("❌ Views skipped due to missing templates.")  # Print a Line
+        # Create a table to display the skipped views
+        output.print_table(table_data=templates_to_create, columns=["MISSING TEMPLATE", "COMMENT"])  # Print a Table
 
 
 if level_mismatch is not None and level in level_mismatch:

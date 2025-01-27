@@ -64,18 +64,18 @@ def get_views_for_levels(doc):
 
     view_to_sheet_map = {vp.ViewId: vp.SheetId for vp in viewports_collector}
 
-    # Categorize views based on grid lines and check if they are placed on a sheet
+    # Categorize views based on level lines and check if they are placed on a sheet
     for view in views_collector:
         if view.Id in view_to_sheet_map:
             if view.ViewType == ViewType.Elevation and not view.IsTemplate:
-                grid_lines = FilteredElementCollector(doc, view.Id).OfClass(Grid).ToElements()
-                if len(grid_lines) <= 1:
+                level_lines = FilteredElementCollector(doc, view.Id).OfClass(level).ToElements()
+                if len(level_lines) <= 1:
                     view_dict['Detail Views'].append(view)
                 else:
                     view_dict['Elevations'].append(view)
             elif view.ViewType == ViewType.Section and not view.IsTemplate:
-                grid_lines = FilteredElementCollector(doc, view.Id).OfClass(Grid).ToElements()
-                if len(grid_lines) <= 1:
+                level_lines = FilteredElementCollector(doc, view.Id).OfClass(level).ToElements()
+                if len(level_lines) <= 1:
                     view_dict['Detail Views'].append(view)
                 else:
                     view_dict['Sections'].append(view)
@@ -137,12 +137,12 @@ if align_choice == 'No, please align levels and dimension them!':
 
 total_view_count = 0
 view_list_length =0
-total_grid_count = 0
-grid_list_length = 0
+total_level_count = 0
+level_list_length = 0
 
 try:
     # Create transaction to create dimensions
-    t = DB.Transaction(doc, "Dimension grids")
+    t = DB.Transaction(doc, "Dimension levels")
     t.Start()
 
     for view in selected_views:
@@ -155,6 +155,7 @@ try:
         for level in levels_list:
             level.SetDatumExtentType(DB.DatumEnds.End0, view, DB.DatumExtentType.ViewSpecific)
             level.SetDatumExtentType(DB.DatumEnds.End1, view, DB.DatumExtentType.ViewSpecific)
+            level_list_length +=1
         #print(levels_list)
 
         start_points, end_points, level_curves = datum_points(levels_list , view)
@@ -189,7 +190,7 @@ try:
             d2 = doc.Create.NewDimension(view, line_offset2, ref)
 
         view_list_length+= 1                   
-    total_grid_count += grid_list_length
+    total_level_count += level_list_length
     total_view_count += view_list_length
 
     t.Commit()
@@ -198,8 +199,8 @@ try:
     runtime = end_time - start_time
  
     run_result = "Tool ran successfully"
-    if total_grid_count:
-        element_count = total_grid_count
+    if total_level_count:
+        element_count = total_level_count
     else:
         element_count = 0
 
@@ -220,11 +221,9 @@ except Exception as e:
     element_count = 0
     
     get_run_data(__title__, runtime, element_count, manual_time, run_result, error_occured)
+    output.print_md(header_data)
 
-finally:
-    t.Dispose()
-
-output.print_md(header_data)
+forms.alert("Dimensions added for {} levels in {} views.".format(total_level_count, total_view_count))
 
 # print("Script runtime: {:.2f} seconds".format(runtime))
 

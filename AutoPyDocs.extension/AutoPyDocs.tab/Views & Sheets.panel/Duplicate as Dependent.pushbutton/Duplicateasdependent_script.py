@@ -195,7 +195,7 @@ if form.ShowDialog() == DialogResult.OK:
                 dependent_element = doc.GetElement(dependent_view)
                 dependent_element.Name = unique_name
                 if dependent_element:
-                    new_names.append((dependent_element.Name, dependent_element.Id))
+                    new_names.append((dependent_element.Name, output.linkify(dependent_element.Id)))
 
                 # Add the new name to the existing names set
                 existing_view_names.add(unique_name)
@@ -221,9 +221,8 @@ if form.ShowDialog() == DialogResult.OK:
         # Create a table to display the skipped views
         output.print_table(table_data=new_names, columns=["VIEW NAME", "VIEW ID"])  # Print a Table
 
-    forms.show_balloon("Dependent views created successfully.", "Success")
 else:
-    forms.show_balloon("Operation canceled by user.", "Canceled")
+    forms.alert("Operation cancelled by user.", "Cancelled", exitscript=True)
     # Ensure to print or log anything else if necessary
 
 runtime = time.time() - start_time

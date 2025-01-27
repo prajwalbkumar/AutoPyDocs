@@ -187,7 +187,7 @@ def align_grids(doc, selected_views):
                 for curve_loop in crop_region:
                     #print(curve_loop)
                     for curve in curve_loop:
-                        print(curve)
+                        #print(curve)
                         # Get Z value of all end points
                         end_point_z.append(curve.GetEndPoint(0).Z)
 
@@ -465,4 +465,4 @@ def align_levels(doc, final_selected_views, header_data):
         print("\n\n")
         output.print_md("---")  # Markdown Line Break
 
-    print("Script runtime: {:.2f} seconds".format(runtime))
+    #print("Script runtime: {:.2f} seconds".format(runtime))

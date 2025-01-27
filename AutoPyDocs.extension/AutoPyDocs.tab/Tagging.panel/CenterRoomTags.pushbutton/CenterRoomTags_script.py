@@ -41,7 +41,8 @@ all_view_types = {
     'Floor Plans': ViewType.FloorPlan,
     'Reflected Ceiling Plans': ViewType.CeilingPlan,
     'Area Plans': ViewType.AreaPlan,
-    'Structural Plans' : ViewType.EngineeringPlan
+    'Structural Plans' : ViewType.EngineeringPlan,
+    'Sections' : ViewType.Section
 }
 
 # Show a dialog box for selecting desired view types
@@ -147,7 +148,7 @@ def find_linked_room_for_tag(tag_point, linked_room):
     for geom in closed_shell:
         for face in geom.Faces:
             normal = face.FaceNormal
-            if normal.Y == -1:
+            if normal.Z == -1:
                 if face.Project(tag_point):
                     return linked_room
 
@@ -232,9 +233,11 @@ else:
     linked_instance = None
     link_doc = None
 
+
+
+
 tg = TransactionGroup(doc, "Place Room Tags")
 tg.Start()
-
 
 ignored_rooms = []
 for view in selected_views:
@@ -268,80 +271,195 @@ for view in selected_views:
     else:
             owned_elements = all_room_tags
 
-
-t = Transaction(doc, "place tags")
-t.Start()
-
-for view in selected_views:
-    
-    # Collect all rooms visible in the active view from the current document
-    current_rooms = FilteredElementCollector(doc, view.Id).OfCategory(BuiltInCategory.OST_Rooms).WhereElementIsNotElementType().ToElements()
-
-    # Collect all rooms visible in the active view from linked models
-    linked_rooms = []
-    if linked_instance:
-        linked_rooms += FilteredElementCollector(link_doc, view.Id).OfCategory(BuiltInCategory.OST_Rooms).WhereElementIsNotElementType().ToElements()
-
-    all_rooms = list(current_rooms) + linked_rooms
     # Collect all room tags in the active view
     for tag in owned_elements:
-        tag_location = tag.Location.Point
-        room = tag.Room
+        t = Transaction(doc, "delete tags")
+        t.Start()
+
         if tag.HasLeader:
             continue
         if not tag.Room:
             doc.Delete(tag.Id)
 
+        t.Commit()
 
 
-    # Create a set of already tagged room IDs
 
-    updated_room_tags = FilteredElementCollector(doc, view.Id).OfCategory(BuiltInCategory.OST_RoomTags).WhereElementIsNotElementType().ToElements()
-    tagged_room_ids = set(tag.Room.Id for tag in updated_room_tags if hasattr(tag, "Room") and tag.Room)
 
-    for room in all_rooms:
+for view in selected_views:
+    if view.ViewType == ViewType.Section:
+        section_bbox = view.CropBox
+        section_transform = view.CropBox.Transform
 
-        # Skip if the room is already tagged
-        if room.Id in tagged_room_ids:
 
-            continue
+        # Collect all rooms visible in the active view from the current document
+        current_rooms = FilteredElementCollector(doc, view.Id).OfCategory(BuiltInCategory.OST_Rooms).WhereElementIsNotElementType().ToElements()
 
-        location = room.Location
-        room_center = location.Point
-        room_center_uv = UV(room_center.X, room_center.Y)
-        room_tag = doc.Create.NewRoomTag(LinkElementId(room.Id),room_center_uv,view.Id)
+        # Transform the section bounding box to the linked model's coordinate system
+        transform_to_link = linked_instance.GetTotalTransform().Inverse
+        transformed_bbox = BoundingBoxXYZ()
+        transformed_bbox.Transform = section_transform.Multiply(transform_to_link)
+        transformed_bbox.Min = transform_to_link.OfPoint(section_bbox.Min)
+        transformed_bbox.Max = transform_to_link.OfPoint(section_bbox.Max)
 
+
+        # Collect all rooms visible in the active view from linked models
+        linked_rooms = []
         if linked_instance:
+            linkedrooms = FilteredElementCollector(link_doc).OfCategory(BuiltInCategory.OST_Rooms).WhereElementIsNotElementType().ToElements()
 
-            has_tag_inside = False
-            for tag in updated_room_tags:
-                if tag.HasLeader:  # For tags with a leader
-                    leader_end_point = tag.LeaderEnd
+            for room in linkedrooms:
+                room_bbox = room.get_BoundingBox(None)
+                if room_bbox:
+                    room_outline = Outline(room_bbox.Min, room_bbox.Max)
+                    section_outline = Outline(transformed_bbox.Min, transformed_bbox.Max)
+                    if room_outline.Intersects(section_outline, 0.001):
+                        linked_rooms.append(room)
+
+        
+        all_rooms = list(current_rooms) + linked_rooms
+        print(all_rooms)
 
 
-                    # Get room boundary as a polygon
-                    boundary_points = get_room_boundary_as_polygon(room)
-                    if not boundary_points:
+        # Create a set of already tagged room IDs
 
-                        continue  # Skip rooms without boundaries
+        updated_room_tags = FilteredElementCollector(doc, view.Id).OfCategory(BuiltInCategory.OST_RoomTags).WhereElementIsNotElementType().ToElements()
+        tagged_room_ids = set(tag.Room.Id for tag in updated_room_tags if hasattr(tag, "Room") and tag.Room)
 
-                    # Check if the leader endpoint is inside the room boundary
-                    if is_point_inside_boundary(leader_end_point, boundary_points):
-                        has_tag_inside = True
-            if has_tag_inside:
+        t = Transaction(doc, "place tags")
+        t.Start()
+
+        for room in current_rooms:
+
+            # Skip if the room is already tagged
+            if room.Id in tagged_room_ids:
+
+                continue
+
+            room_bbox = room.get_BoundingBox(view)
+            bbox_center = (room_bbox.Min + room_bbox.Max) / 2
+            bbox_center_uv = UV(bbox_center.X, bbox_center.Y)
+            height = bbox_center.Z
+            room_tag = doc.Create.NewRoomTag(LinkElementId(room.Id),bbox_center_uv,view.Id)
+            room_tag.Location.Move(XYZ(0,0,height))
+
+        for room in linked_rooms:
+            print(room)
+        for room in linked_rooms:
+            area = room.LookupParameter("Area").AsDouble()
+            print(area)
+            if room.LookupParameter("Area").AsDouble() < 0.1:
+                continue
+            location = room.Location
+
+            print(location)
+
+            room_bbox = room.get_BoundingBox(view)
+            bbox_center = (room_bbox.Min + room_bbox.Max) / 2
+            height = bbox_center.Z
+            room_center = location.Point
+            room_center_uv = UV(room_center.X, room_center.Y)
+            if linked_instance:
+
+                has_tag_inside = False
+                for tag in updated_room_tags:
+                    if tag.HasLeader:  # For tags with a leader
+                        leader_end_point = tag.LeaderEnd
+
+
+                        # Get room boundary as a polygon
+                        boundary_points = get_room_boundary_as_polygon(room)
+                        if not boundary_points:
+
+                            continue  # Skip rooms without boundaries
+
+                        # Check if the leader endpoint is inside the room boundary
+                        if is_point_inside_boundary(leader_end_point, boundary_points):
+                            has_tag_inside = True
+                if has_tag_inside:
+                        continue
+                else:
+                    room_tag = doc.Create.NewRoomTag(LinkElementId(linked_instance.Id, room.Id),room_center_uv,view.Id)
+                    room_tag.Location.Move(XYZ(0,0,height))
+        t.Commit()
+
+    elif view.ViewType == ViewType.FloorPlan:
+
+        # Collect all rooms visible in the active view from the current document
+        current_rooms = FilteredElementCollector(doc, view.Id).OfCategory(BuiltInCategory.OST_Rooms).WhereElementIsNotElementType().ToElements()
+
+        # Collect all rooms visible in the active view from linked models
+        linked_rooms = []
+        if linked_instance:
+            linkedrooms = FilteredElementCollector(link_doc).OfCategory(BuiltInCategory.OST_Rooms).WhereElementIsNotElementType().ToElements()
+
+            for room in linkedrooms:
+                if link_doc.GetElement(room.LevelId).Name != view.GenLevel.Name:
                     continue
-            else:
-                room_tag = doc.Create.NewRoomTag(LinkElementId(linked_instance.Id, room.Id),room_center_uv,view.Id)
+                linked_rooms.append(room)
 
 
+        all_rooms = list(current_rooms) + linked_rooms
 
-t.Commit()
+
+        # Create a set of already tagged room IDs
+
+        updated_room_tags = FilteredElementCollector(doc, view.Id).OfCategory(BuiltInCategory.OST_RoomTags).WhereElementIsNotElementType().ToElements()
+        tagged_room_ids = set(tag.Room.Id for tag in updated_room_tags if hasattr(tag, "Room") and tag.Room)
+
+        t = Transaction(doc, "place tags")
+        t.Start()
+        for room in current_rooms:
+
+            # Skip if the room is already tagged
+            if room.Id in tagged_room_ids:
+
+                continue
+
+            location = room.Location
+            room_center = location.Point
+            room_center_uv = UV(room_center.X, room_center.Y)
+            room_tag = doc.Create.NewRoomTag(LinkElementId(room.Id),room_center_uv,view.Id)
+
+        for room in linked_rooms:
+
+            location = room.Location
+            if location:
+                room_center = location.Point
+                room_center_uv = UV(room_center.X, room_center.Y)
+                if linked_instance:
+
+                    has_tag_inside = False
+                    for tag in updated_room_tags:
+                        if tag.HasLeader:  # For tags with a leader
+                            leader_end_point = tag.LeaderEnd
+
+
+                            # Get room boundary as a polygon
+                            boundary_points = get_room_boundary_as_polygon(room)
+                            if not boundary_points:
+
+                                continue  # Skip rooms without boundaries
+
+                            # Check if the leader endpoint is inside the room boundary
+                            if is_point_inside_boundary(leader_end_point, boundary_points):
+                                has_tag_inside = True
+                    if has_tag_inside:
+                            continue
+                    else:
+                        room_tag = doc.Create.NewRoomTag(LinkElementId(linked_instance.Id, room.Id),room_center_uv,view.Id)
+
+
+        t.Commit()
 
 
 t = Transaction(doc, "Center Room Tags")
 t.Start()
 
 for view in selected_views:
+    if view.ViewType == ViewType.Section:
+        continue
+
     all_room_tags = FilteredElementCollector(doc, view.Id).OfCategory(BuiltInCategory.OST_RoomTags).WhereElementIsNotElementType().ToElements()
 
     for tag in all_room_tags:
@@ -362,7 +480,7 @@ for view in selected_views:
                     for geom in closed_shell:
                         for face in geom.Faces:
                             normal = face.FaceNormal
-                            if normal.Y == -1:
+                            if normal.Z == -1:
                                 edges = face.EdgeLoops
                                 for edge in edges:
                                     bonudary_segment_length = edge.Size
@@ -389,7 +507,7 @@ for view in selected_views:
                                         for geom in closed_shell:
                                             for face in geom.Faces:
                                                 normal = face.FaceNormal
-                                                if normal.Y == -1:
+                                                if normal.Z == -1:
                                                     bottom_face = face
 
                                         if bottom_face:
@@ -418,6 +536,7 @@ for view in selected_views:
                                         ignored_rooms.append(room)
                     break
         else:
+
                     boundary_segments = room.GetBoundarySegments(SpatialElementBoundaryOptions())
 
                     if not boundary_segments:
@@ -430,6 +549,7 @@ for view in selected_views:
 
                         if room.IsPointInRoom(room_center):
                             move_room_and_tag(tag, room, room_center)
+                            room.Location.Point = room_center
                             centered_tags_count += 1  # Increment the counter
                         else:
                             ignored_rooms.append(room)
@@ -482,6 +602,7 @@ for view in selected_views:
                                 room_bb = room.get_BoundingBox(view)
                                 room_center = (room_bb.Min + room_bb.Max) / 2
                                 if room.IsPointInRoom(room_center):
+
                                     move_room_and_tag(tag, room, room_center)
                                     room.Location.Point = room_center
                                     centered_tags_count += 1  # Increment the counter
@@ -489,6 +610,7 @@ for view in selected_views:
                                     ignored_rooms.append(room)
                             else:
                                 if largest_triangle_center and room.IsPointInRoom(largest_triangle_center):
+
                                     move_room_and_tag(tag, room, largest_triangle_center)
                                     room.Location.Point = largest_triangle_center
                                     centered_tags_count += 1  # Increment the counter
